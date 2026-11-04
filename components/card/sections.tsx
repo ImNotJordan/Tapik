@@ -4,7 +4,9 @@ import { BRAND } from "@/lib/brand";
 import { Check, ChevronLeft, ChevronRight, Copy, FileText, Mail, Maximize2, Minus, Navigation, Phone, Plus, X } from "lucide-react";
 import { Dialog as D } from "radix-ui";
 import { createContext, useContext, useId, useMemo, useRef, useState, type ReactNode } from "react";
-import { directionsUrl, getMapEmbed } from "@/lib/services/card-utils";
+import { directionsUrl } from "@/lib/services/card-utils";
+import { mapsEnabled } from "@/lib/maps/google";
+import { GoogleMapLayer } from "./google-map";
 import { getPlatform, displayHandle } from "@/lib/social";
 import type { AlbumPhoto, OrgMember } from "@/lib/types";
 import { phoneDigits } from "@/lib/validate";
@@ -267,11 +269,11 @@ function mapSeed(lat = 14.6, lng = 121) {
   };
 }
 
-/** Styled stand-in until a map provider is connected (see getMapEmbed). */
+/** The card's map: a live Google map when there's a key and a pin, over a drawn stand-in that shows until it loads (or without one). */
 export function StyledMap({ tone, className }: { tone: Tone; className?: string }) {
   const { bundle } = useCard();
-  const { mapLat, mapLng, address } = bundle.card;
-  const embed = getMapEmbed(mapLat, mapLng);
+  const { mapLat, mapLng, address, themeId } = bundle.card;
+  const [live, setLive] = useState(false);
   const roads = useMemo(() => {
     const r = mapSeed(mapLat, mapLng);
     return Array.from({ length: 7 }, (_, i) => ({
@@ -281,28 +283,41 @@ export function StyledMap({ tone, className }: { tone: Tone; className?: string 
       w: i === 0 ? 10 : i < 3 ? 6 : 4,
     }));
   }, [mapLat, mapLng]);
+  const ground = tone === "surface" ? "var(--c-surface)" : "var(--c-bg)";
 
-  if (embed) {
-    return <iframe title={`Map of ${address}`} src={embed} className={cn("size-full border-0", className)} loading="lazy" />;
-  }
   return (
-    <div role="img" aria-label={`Map showing ${address ?? "the office"}`} className={cn("relative overflow-hidden", T[tone].tint, className)}>
-      <div aria-hidden className={cn("absolute top-[8%] right-[6%] h-[38%] w-[30%] rounded-lg opacity-60", tone === "surface" ? "bg-c-line" : "bg-c-bg-line")} />
-      <div aria-hidden className={cn("absolute bottom-[6%] left-[4%] h-[22%] w-[26%] rounded-lg opacity-40", tone === "surface" ? "bg-c-line" : "bg-c-bg-line")} />
-      {roads.map((rd, i) => (
-        <span
-          key={i}
-          aria-hidden
-          className={cn("absolute left-[-20%] block w-[140%] origin-center", tone === "surface" ? "bg-c-surface" : "bg-c-bg")}
-          style={{ top: `${rd.y}%`, height: rd.w, transform: `rotate(${rd.a}deg) translateX(${rd.x - 50}%)` }}
+    <div className={cn("relative overflow-hidden", T[tone].tint, className)}>
+      <div role="img" aria-label={`Map showing ${address ?? "the office"}`} aria-hidden={live || undefined} className="absolute inset-0">
+        <div aria-hidden className={cn("absolute top-[8%] right-[6%] h-[38%] w-[30%] rounded-lg opacity-60", tone === "surface" ? "bg-c-line" : "bg-c-bg-line")} />
+        <div aria-hidden className={cn("absolute bottom-[6%] left-[4%] h-[22%] w-[26%] rounded-lg opacity-40", tone === "surface" ? "bg-c-line" : "bg-c-bg-line")} />
+        {roads.map((rd, i) => (
+          <span
+            key={i}
+            aria-hidden
+            className={cn("absolute left-[-20%] block w-[140%] origin-center", tone === "surface" ? "bg-c-surface" : "bg-c-bg")}
+            style={{ top: `${rd.y}%`, height: rd.w, transform: `rotate(${rd.a}deg) translateX(${rd.x - 50}%)` }}
+          />
+        ))}
+        <span aria-hidden className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
+          <svg viewBox="0 0 24 24" className="size-10 drop-shadow-[0_3px_4px_rgb(0_0_0/0.35)]">
+            <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" fill="var(--c-accent)" stroke={ground} strokeWidth="1.5" />
+            <circle cx="12" cy="10" r="3" fill={ground} />
+          </svg>
+        </span>
+      </div>
+      {mapsEnabled && mapLat != null && mapLng != null && (
+        <GoogleMapLayer
+          // A new theme can flip light/dark: start the map again in the right style.
+          key={`${themeId}-${tone}`}
+          lat={mapLat}
+          lng={mapLng}
+          label={`Map of ${address ?? "the office"}`}
+          backgroundVar={tone === "surface" ? "--c-surface" : "--c-bg"}
+          pinFill="var(--c-accent)"
+          pinRing={ground}
+          onReady={() => setLive(true)}
         />
-      ))}
-      <span aria-hidden className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-full">
-        <svg viewBox="0 0 24 24" className="size-10 drop-shadow-[0_3px_4px_rgb(0_0_0/0.35)]">
-          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" fill="var(--c-accent)" stroke={tone === "surface" ? "var(--c-surface)" : "var(--c-bg)"} strokeWidth="1.5" />
-          <circle cx="12" cy="10" r="3" fill={tone === "surface" ? "var(--c-surface)" : "var(--c-bg)"} />
-        </svg>
-      </span>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import { BRAND } from "@/lib/brand";
 import { createSeedDB, bundleFromDB } from "@/lib/mock";
 import type { AlbumPhoto, Card, CardBundle, CardEvent, CardPermissions, Invite, PricingOverrides, TemplateRequest } from "@/lib/types";
 import { phoneDigits } from "@/lib/validate";
+import { geocodeWithGoogle, mapsEnabled } from "@/lib/maps/google";
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -180,15 +181,9 @@ export async function resizeImage(file: File, kind: UploadKind): Promise<{ blob:
 
 /* ------------------------------------------------------------ Map + vCard */
 
-/** TODO(backend): return an embeddable map URL (needs a Maps API key). Null = styled placeholder. */
-export function getMapEmbed(lat?: number, lng?: number): string | null {
-  void lat;
-  void lng;
-  return null;
-}
-
-/** TODO(backend): geocode with a maps provider. Mock: stable fake coordinates near Metro Manila. */
+/** Address → map pin. Google when a Maps key is set (browser only); otherwise stable fake coordinates near Metro Manila. */
 export async function geocodeAddress(address: string): Promise<Result<{ lat: number; lng: number }>> {
+  if (mapsEnabled) return geocodeWithGoogle(address);
   await wait(500);
   if (address.trim().length < 8) return { ok: false, error: "Add a street and city so the pin lands in the right place." };
   let h = 0;
