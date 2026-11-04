@@ -5,7 +5,7 @@ import "server-only";
  * Never import this from a client component ("server-only" makes that a build error).
  */
 import { applicationDefault, cert, getApps, initializeApp, type App, type Credential } from "firebase-admin/app";
-import { getVercelOidcToken } from "@vercel/functions/oidc";
+import { getVercelOidcToken, getVercelOidcTokenSync } from "@vercel/functions/oidc";
 import { IdentityPoolClient } from "google-auth-library";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { Firestore, getFirestore } from "firebase-admin/firestore";
@@ -33,10 +33,18 @@ async function vercelOidcToken(): Promise<string> {
   }
 }
 
-/** Call in the request (outside 'use cache') before cached reads, so the token exchange has a token to use. */
+/**
+ * Call in the request (outside 'use cache') before cached reads, so the token exchange has a token to use.
+ * Synchronous getter on purpose: the async one checks expiry with Date.now(), which Cache Components
+ * refuses while prerendering (the build failed on /c/[slug]). Expiry is checked later, inside the cached read.
+ */
 export async function primeFederatedToken(): Promise<void> {
   if (!process.env.VERCEL) return;
-  await vercelOidcToken().catch(() => {});
+  try {
+    lastOidcToken = getVercelOidcTokenSync();
+  } catch {
+    // No token in this context; the exchange asks again when it needs one.
+  }
 }
 
 /** The Vercel → Google token exchange client, or null when not on Vercel / not configured. One per server instance. */
