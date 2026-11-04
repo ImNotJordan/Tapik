@@ -1,0 +1,39 @@
+rules_version = '2';
+
+// Card media in gs://tapik-ph-media (asia-southeast1).
+// Path: cards/{cardId}/{kind}/{file}. Object names are random (nanoid), so the token
+// download URLs in a published snapshot can't be guessed; drafts are readable only by
+// the admin and the owning client. Unpublish and delete remove or rotate those objects.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isAdmin() { return request.auth != null && request.auth.token.role == 'admin'; }
+    function ownsCard(cardId) {
+      return request.auth != null && request.auth.token.role == 'client' && request.auth.token.cardId == cardId;
+    }
+    function canTouch(cardId) { return isAdmin() || ownsCard(cardId); }
+    function underMB(mb) { return request.resource.size < mb * 1024 * 1024; }
+    // HEIC is converted to JPEG in the browser before upload (browsers can't display it).
+    function isRaster() { return request.resource.contentType.matches('image/(jpeg|png|webp)'); }
+    function isSvg() { return request.resource.contentType == 'image/svg+xml'; }
+    function isPdf() { return request.resource.contentType == 'application/pdf'; }
+    function knownKind(kind) {
+      return kind in ['agent', 'cover', 'logo', 'logo-dark', 'album', 'org', 'org-member', 'orgchart'];
+    }
+
+    match /cards/{cardId}/{kind}/{file} {
+      allow read: if canTouch(cardId);
+      allow delete: if canTouch(cardId) && knownKind(kind);
+      allow create, update: if canTouch(cardId) && knownKind(kind) && (
+        (isRaster() && underMB(10))
+        || (kind == 'orgchart' && isPdf() && underMB(15))
+        || (kind in ['logo', 'logo-dark'] && isSvg() && underMB(2))
+      );
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

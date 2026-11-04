@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" role="img" aria-label="Kapehan sa Calle Real organization chart">
+<rect width="960" height="560" fill="#FBF7F1"/>
+<g font-family="Arial, Helvetica, sans-serif" text-anchor="middle">
+<text x="480" y="52" font-size="26" font-weight="700" fill="#2B160D">Kapehan sa Calle Real · Team</text>
+<path d="M480 150 V200 M150 200 H810 M150 200 V250 M370 200 V250 M590 200 V250 M810 200 V250 M590 330 V380" stroke="#8A5A3C" stroke-width="2" fill="none"/>
+<rect x="370" y="80" width="220" height="70" rx="10" fill="#55291B"/><text x="480" y="111" font-size="19" font-weight="700" fill="#FBEFE3">Lia Soriano</text><text x="480" y="134" font-size="15" fill="#F2D3AE">Owner</text>
+<rect x="50" y="250" width="200" height="80" rx="10" fill="#FFFFFF" stroke="#C9A98C"/><text x="150" y="285" font-size="18" font-weight="700" fill="#2B160D">Bea Javellana</text><text x="150" y="308" font-size="15" fill="#6B4A36">Head Barista</text>
+<rect x="270" y="250" width="200" height="80" rx="10" fill="#FFFFFF" stroke="#C9A98C"/><text x="370" y="285" font-size="18" font-weight="700" fill="#2B160D">Tonyo Ledesma</text><text x="370" y="308" font-size="15" fill="#6B4A36">Pastry Chef</text>
+<rect x="490" y="250" width="200" height="80" rx="10" fill="#FFFFFF" stroke="#C9A98C"/><text x="590" y="285" font-size="18" font-weight="700" fill="#2B160D">Ivy Gonzaga</text><text x="590" y="308" font-size="15" fill="#6B4A36">Shift Lead</text>
+<rect x="710" y="250" width="200" height="80" rx="10" fill="#FFFFFF" stroke="#C9A98C"/><text x="810" y="285" font-size="18" font-weight="700" fill="#2B160D">Paolo Treñas</text><text x="810" y="308" font-size="15" fill="#6B4A36">Bookkeeper</text>
+<rect x="490" y="380" width="200" height="80" rx="10" fill="#FFFFFF" stroke="#C9A98C"/><text x="590" y="415" font-size="18" font-weight="700" fill="#2B160D">Jessa Divinagracia</text><text x="590" y="438" font-size="15" fill="#6B4A36">Cashier</text>
+</g></svg>

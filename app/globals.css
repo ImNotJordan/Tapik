@@ -1,0 +1,467 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens.
+ * Studio (admin) tokens: calm, flat, borders over shadows. Light and dark.
+ * Card tokens (--c-*) are set per card by lib/design/resolve.ts on the card root.
+ */
+
+:root {
+  /* Studio palette */
+  --studio-bg: #f3f4f1;
+  --studio-surface: #ffffff;
+  --studio-sunken: #e8eae6;
+  --studio-raised: #ecefea;
+  --studio-line: #dcdfda;
+  --studio-line-strong: #c4c9c2;
+  --studio-ink: #1a1d1b;
+  --studio-ink-2: #3f4541;
+  --studio-ink-3: #5a605c;
+  --studio-action: #1e5c45;
+  --studio-action-hover: #174a37;
+  --studio-on-action: #ffffff;
+  --studio-action-soft: #e1ede6;
+  --studio-action-ink: #1a5640;
+  --studio-danger: #b3261e;
+  --studio-on-danger: #ffffff;
+  --studio-danger-ink: #a0221b;
+  --studio-danger-soft: #fbe9e7;
+  --studio-warn-soft: #f6ead2;
+  --studio-info-soft: #e2ebf5;
+  --studio-info-ink: #1d4675;
+  --studio-warn-ink: #6e4400;
+  --studio-success: #2f6b3f;
+  --studio-success-soft: #e3f0e5;
+  --studio-focus: #1e5c45;
+  --studio-scrim: rgb(20 24 21 / 0.48);
+
+  /* Motion */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --dur-slow: 360ms;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --studio-bg: #121513;
+    --studio-surface: #191d1a;
+    --studio-sunken: #0d0f0e;
+    --studio-raised: #222723;
+    --studio-line: #2b312d;
+    --studio-line-strong: #3d4540;
+    --studio-ink: #e8ebe7;
+    --studio-ink-2: #c3c9c4;
+    --studio-ink-3: #9ba39d;
+    --studio-action: #7cc9a4;
+    --studio-action-hover: #95d6b6;
+    --studio-on-action: #0d1a13;
+    --studio-action-soft: #1d3329;
+    --studio-action-ink: #8fd4b2;
+    --studio-danger: #f2877e;
+    --studio-on-danger: #2a0d0a;
+    --studio-danger-ink: #f4a39b;
+    --studio-danger-soft: #3a1d1a;
+    --studio-warn-soft: #3a2c12;
+    --studio-info-soft: #1a2a3c;
+    --studio-info-ink: #a5c8ef;
+    --studio-warn-ink: #f0c879;
+    --studio-success: #7cc9a4;
+    --studio-success-soft: #1d3329;
+    --studio-focus: #7cc9a4;
+    --studio-scrim: rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-sans: var(--font-atkinson), system-ui, sans-serif;
+  --font-card-display: var(--c-font-display);
+  --font-card-body: var(--c-font-body);
+
+  --color-studio-bg: var(--studio-bg);
+  --color-studio-surface: var(--studio-surface);
+  --color-studio-sunken: var(--studio-sunken);
+  --color-studio-raised: var(--studio-raised);
+  --color-studio-line: var(--studio-line);
+  --color-studio-line-strong: var(--studio-line-strong);
+  --color-studio-ink: var(--studio-ink);
+  --color-studio-ink-2: var(--studio-ink-2);
+  --color-studio-ink-3: var(--studio-ink-3);
+  --color-studio-action: var(--studio-action);
+  --color-studio-action-hover: var(--studio-action-hover);
+  --color-studio-on-action: var(--studio-on-action);
+  --color-studio-action-soft: var(--studio-action-soft);
+  --color-studio-action-ink: var(--studio-action-ink);
+  --color-studio-danger: var(--studio-danger);
+  --color-studio-on-danger: var(--studio-on-danger);
+  --color-studio-danger-ink: var(--studio-danger-ink);
+  --color-studio-danger-soft: var(--studio-danger-soft);
+  --color-studio-warn-soft: var(--studio-warn-soft);
+  --color-studio-info-soft: var(--studio-info-soft);
+  --color-studio-info-ink: var(--studio-info-ink);
+  --color-studio-warn-ink: var(--studio-warn-ink);
+  --color-studio-success: var(--studio-success);
+  --color-studio-success-soft: var(--studio-success-soft);
+  --color-studio-focus: var(--studio-focus);
+
+  --color-c-bg: var(--c-bg);
+  --color-c-on-bg: var(--c-on-bg);
+  --color-c-on-bg-muted: var(--c-on-bg-muted);
+  --color-c-bg-line: var(--c-bg-line);
+  --color-c-bg-tint: var(--c-bg-tint);
+  --color-c-surface: var(--c-surface);
+  --color-c-text: var(--c-text);
+  --color-c-text-muted: var(--c-text-muted);
+  --color-c-line: var(--c-line);
+  --color-c-surface-tint: var(--c-surface-tint);
+  --color-c-primary: var(--c-primary);
+  --color-c-on-primary: var(--c-on-primary);
+  --color-c-accent: var(--c-accent);
+
+  --radius-c-btn: var(--c-btn-radius);
+  --ease-out-expo: var(--ease-out-expo);
+}
+
+/* Studio type scale (minor third from 14px): 12 / 14 / 16 / 20 / 24 / 29 */
+@theme {
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1.35;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.45;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.3;
+  --text-xl: 1.5rem;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 1.8125rem;
+  --text-2xl--line-height: 1.15;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--studio-bg);
+  color: var(--studio-ink);
+  font-family: var(--font-atkinson), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--studio-action-soft);
+  color: var(--studio-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--studio-focus);
+  outline-offset: 2px;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+
+p {
+  text-wrap: pretty;
+}
+
+/* Thin, quiet scrollbars inside the studio panels */
+.studio-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: var(--studio-line-strong) transparent;
+}
+
+/* --------------------------------------------------------------- Card */
+
+.card-root {
+  background: var(--c-bg);
+  color: var(--c-on-bg);
+  font-family: var(--c-font-body);
+  container-type: inline-size;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.card-root ::selection {
+  background: var(--c-accent);
+  color: var(--c-bg);
+}
+
+.card-root :focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+.card-display {
+  font-family: var(--c-font-display);
+  font-weight: var(--c-display-weight);
+  letter-spacing: var(--c-display-tracking);
+}
+
+/* Card buttons: shape from --c-btn-radius, fill from data-fill on .card-root */
+.cbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  border-radius: var(--c-btn-radius);
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    transform var(--dur-fast) var(--ease-out-quart),
+    background-color var(--dur-base) var(--ease-out-quart),
+    box-shadow var(--dur-base) var(--ease-out-quart);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.cbtn:active {
+  transform: scale(0.97);
+}
+
+/* Primary: on the page ground */
+.cbtn-primary {
+  background: var(--c-primary);
+  color: var(--c-on-primary);
+  border: 1.5px solid var(--c-primary);
+}
+[data-fill="outline"] .cbtn-primary {
+  background: transparent;
+  color: var(--c-on-bg);
+  border-color: var(--c-on-bg);
+}
+[data-fill="soft"] .cbtn-primary {
+  background: color-mix(in oklab, var(--c-primary) 22%, var(--c-bg));
+  color: var(--c-on-bg);
+  border-color: transparent;
+}
+
+/* Secondary: always outlined, on the page ground */
+.cbtn-secondary {
+  background: transparent;
+  color: var(--c-on-bg);
+  border: 1.5px solid var(--c-bg-line);
+}
+.cbtn-secondary:hover {
+  background: var(--c-bg-tint);
+}
+
+/* Buttons that sit on the surface (sheet, band) */
+.cbtn-surface {
+  background: var(--c-text);
+  color: var(--c-surface);
+  border: 1.5px solid var(--c-text);
+}
+[data-fill="outline"] .cbtn-surface {
+  background: transparent;
+  color: var(--c-text);
+}
+[data-fill="soft"] .cbtn-surface {
+  background: var(--c-surface-tint);
+  color: var(--c-text);
+  border-color: transparent;
+}
+
+/* Hyacinth Executive (templates/hyacinth-executive/brand.ts) */
+[data-template="hyacinth-executive"][data-fill="solid"] .hx-cta {
+  background: linear-gradient(148deg, var(--c-primary) 0%, var(--c-primary) 45%, color-mix(in oklab, var(--c-primary) 84%, black) 100%);
+  border-color: transparent;
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.35),
+    0 8px 18px -8px rgb(0 0 0 / 0.55),
+    inset 0 0 0 1px rgb(255 255 255 / 0.07),
+    inset 0 1px 0 rgb(255 255 255 / 0.11);
+}
+/* Focus rings: gold on the dark hero; the sheet's ink wherever white text sits on the light sheet. */
+[data-template="hyacinth-executive"] .hx-cta:focus-visible {
+  outline-color: var(--hx-focus);
+}
+[data-template="hyacinth-executive"] .hx-bar a:focus-visible,
+[data-template="hyacinth-executive"] .hx-social:focus-visible {
+  outline-color: var(--c-text);
+}
+/* The bottom bar sits on the light sheet, so Outline and Soft fills read from the sheet's colors there. */
+[data-template="hyacinth-executive"][data-fill="outline"] .hx-bar .cbtn-primary {
+  color: var(--c-text);
+  border-color: var(--c-text);
+}
+[data-template="hyacinth-executive"][data-fill="soft"] .hx-bar .cbtn-primary {
+  background: color-mix(in oklab, var(--c-primary) 14%, var(--c-surface));
+  color: var(--c-text);
+}
+.hx-outline {
+  color: var(--c-on-bg);
+  border: 1.5px solid var(--hx-hero-outline);
+}
+.hx-outline:hover {
+  background: color-mix(in oklab, var(--c-on-bg) 7%, transparent);
+}
+.hx-bar-dark {
+  background: #080808;
+  color: #ffffff;
+  border: 1.5px solid #080808;
+}
+.hx-bar-outline {
+  background: transparent;
+  color: var(--c-text);
+  border: 1.5px solid var(--hx-card-border);
+}
+/* One authored motion moment per template; off with reduced motion or the card toggle. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-motion="on"] .motion-card-settle {
+    animation: card-settle 900ms var(--ease-out-expo) both;
+  }
+  [data-motion="on"] .motion-name-rise > * {
+    animation: name-rise 800ms var(--ease-out-expo) both;
+  }
+  [data-motion="on"] .motion-name-rise > *:nth-child(2) {
+    animation-delay: 90ms;
+  }
+  [data-motion="on"] .hx-chips > li {
+    animation: hx-chip-in 520ms var(--ease-out-quart) both;
+    animation-delay: calc(var(--i, 0) * 45ms + 150ms);
+  }
+  [data-motion="on"] .hx-drift {
+    animation: hx-drift 28s ease-in-out infinite alternate;
+  }
+  [data-motion="on"] .hx-pulse {
+    animation: hx-pulse 2.6s ease-in-out infinite;
+  }
+  [data-motion="on"] .motion-photo-settle {
+    animation: photo-settle 1400ms var(--ease-out-expo) both;
+  }
+}
+
+@keyframes card-settle {
+  from {
+    transform: translateY(28px) rotate(-6deg);
+    opacity: 0.4;
+  }
+  to {
+    transform: translateY(0) rotate(var(--card-tilt, -1.5deg));
+    opacity: 1;
+  }
+}
+
+@keyframes name-rise {
+  from {
+    transform: translateY(0.35em);
+    clip-path: inset(0 0 100% 0);
+  }
+  to {
+    transform: translateY(0);
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes hx-chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@keyframes hx-drift {
+  from {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  to {
+    transform: translate(-14px, -10px) rotate(8deg);
+  }
+}
+@keyframes hx-pulse {
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes photo-settle {
+  from {
+    transform: scale(1.06);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--skeleton-base, var(--studio-raised)) 25%,
+    var(--skeleton-hi, var(--studio-line)) 50%,
+    var(--skeleton-base, var(--studio-raised)) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes sheet-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes dialog-in {
+  from {
+    transform: translateY(8px) scale(0.98);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+}

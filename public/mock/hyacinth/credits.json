@@ -1,0 +1,20 @@
+[
+ {
+  "file": "public/mock/hyacinth/logo-dark.webp",
+  "media": "image",
+  "title": "Hyacinth Industries, LLC logo",
+  "creator": "Hyacinth Industries, LLC",
+  "license": "Brand asset",
+  "credit": "Hyacinth Industries, LLC logo, from hyacinthindustriesllc.com. The brand owner’s asset, used only for its own template.",
+  "page": "https://hyacinthindustriesllc.com/"
+ },
+ {
+  "file": "public/mock/hyacinth/cover-waves.webp",
+  "media": "image",
+  "title": "Red, gold and black waves",
+  "creator": "Hyacinth Industries, LLC",
+  "license": "Brand asset",
+  "credit": "Hyacinth Industries, LLC brand artwork, from hyacinthindustriesllc.com. The brand owner’s asset, used only for its own template.",
+  "page": "https://hyacinthindustriesllc.com/"
+ }
+]

@@ -1,0 +1,13 @@
+{
+  "projects": {
+    "default": "tapik-ph"
+  },
+  "targets": {
+    "tapik-ph": {
+      "storage": { "media": ["tapik-ph-media"] }
+    },
+    "demo-tapik": {
+      "storage": { "media": ["tapik-ph-media"] }
+    }
+  }
+}

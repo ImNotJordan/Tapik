@@ -1,0 +1,149 @@
+rules_version = '2';
+
+// Tapik Firestore rules. These are the real permission system; hiding UI is only convenience.
+// Roles come from custom claims: { role: 'admin' } or { role: 'client', clientId, cardId }.
+// Privileged changes (publish, invites, template unlocks, slugs, tags, pricing) go through
+// Cloud Functions, which use the Admin SDK and bypass these rules.
+// Tests: tests/rules (npm run test:rules).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && request.auth.token.role == 'admin'; }
+    function isClient() { return signedIn() && request.auth.token.role == 'client' && request.auth.token.clientId is string; }
+    function myClientId() { return request.auth.token.clientId; }
+    function doc(path) { return get(/databases/$(database)/documents/$(path)); }
+    // A disabled client's ID token can live up to an hour after revocation; this closes the gap on writes.
+    function clientActive() { return doc(/clients/$(myClientId())).data.status != 'disabled'; }
+    function ownsCard(cardId) { return isClient() && doc(/cards/$(cardId)).data.clientId == myClientId(); }
+
+    // Keep in sync with CLIENT_EDITABLE_CARD_FIELDS in lib/schemas/index.ts (checked by tests/rules).
+    function clientEditableCardFields() {
+      return ['themeId', 'motion', 'name', 'title', 'company', 'credential', 'quote', 'description',
+        'phone', 'messageChannel', 'messageTarget', 'email', 'address', 'mapLat', 'mapLng', 'showDirections',
+        'agentPhotoUrl', 'agentPhotoAlt', 'agentPhotoCrop', 'backgroundPhotoUrl', 'backgroundPhotoAlt',
+        'backgroundFocalPoint', 'overlayOpacity', 'logoUrl', 'logoDarkUrl', 'logoAlt',
+        'hours', 'services', 'serviceAreas', 'bookingUrl', 'bookingLabel', 'bookingNote', 'expertiseChips',
+        'tagline', 'eyebrow', 'department', 'employeeId', 'event', 'sectionOrder', 'hiddenSections',
+        'orgChart'];
+    }
+
+    // ---------------------------------------------------------------- people
+
+    match /admins/{uid} {
+      allow read: if isAdmin();
+      // An admin edits their own favorites; admins are created by scripts/make-admin.ts.
+      allow update: if isAdmin() && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoriteTemplates', 'updatedAt']);
+    }
+
+    match /clients/{clientId} {
+      allow read, write: if isAdmin();
+      // The portal shows the client's own name and email.
+      allow get: if isClient() && clientId == myClientId();
+    }
+
+    // ----------------------------------------------------------------- cards
+
+    // Who made an edit, and which parts outside the card doc it touched; the change-log trigger reads these.
+    function editStamp() {
+      return request.resource.data.updatedAt == request.time
+        && request.resource.data.lastEditedBy == request.auth.uid
+        && (!('lastEditedSections' in request.resource.data)
+            || (request.resource.data.lastEditedSections is list && request.resource.data.lastEditedSections.size() <= 3));
+    }
+
+    match /cards/{cardId} {
+      allow read: if isAdmin();
+      // Cards are created and deleted by Functions (slug reservation, cleanup).
+      // Slug, status, publishing, review and owner change only through Functions too.
+      allow update: if isAdmin()
+        && !request.resource.data.diff(resource.data).affectedKeys()
+              .hasAny(['slug', 'status', 'publishedAt', 'review', 'clientId', 'createdAt'])
+        && editStamp();
+      allow read: if isClient() && resource.data.clientId == myClientId();
+      // Clients edit content and their theme. Template, fonts, buttons, custom colors,
+      // slug, status, review and permissions stay admin- or function-only.
+      allow update: if isClient()
+        && resource.data.clientId == myClientId()
+        && clientActive()
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(clientEditableCardFields().concat(['updatedAt', 'lastEditedBy', 'lastEditedSections']))
+        && editStamp()
+        && request.resource.data.themeId != 'custom';
+
+      match /{sub}/{docId} {
+        allow read: if isAdmin() && sub in ['socials', 'photos', 'orgMembers', 'changeLog'];
+        allow create, update: if isAdmin() && sub in ['socials', 'photos'] && request.resource.data.cardId == cardId;
+        allow create, update: if isAdmin() && sub == 'orgMembers';
+        allow delete: if isAdmin() && sub in ['socials', 'photos', 'orgMembers'];
+        allow read: if sub in ['socials', 'photos', 'orgMembers', 'changeLog'] && ownsCard(cardId);
+        allow create, update: if sub in ['socials', 'photos'] && ownsCard(cardId) && clientActive()
+          && request.resource.data.cardId == cardId;
+        allow create, update: if sub == 'orgMembers' && ownsCard(cardId) && clientActive();
+        allow delete: if sub in ['socials', 'photos', 'orgMembers'] && ownsCard(cardId) && clientActive();
+        // changeLog is written by the onCardDraftUpdated trigger only.
+      }
+    }
+
+    // The studio lists every card's socials, photos and team in one query each.
+    match /{path=**}/socials/{id} { allow read: if isAdmin(); }
+    match /{path=**}/photos/{id} { allow read: if isAdmin(); }
+    match /{path=**}/orgMembers/{id} { allow read: if isAdmin(); }
+    match /{path=**}/changeLog/{id} { allow read: if isAdmin(); }
+
+    // Published snapshots: anyone can open one card by its slug, nobody can list them all.
+    match /publicCards/{slug} {
+      allow get: if true;
+      allow list: if isAdmin();
+    }
+
+    match /slugs/{slug} {
+      allow read: if isAdmin();
+    }
+
+    // ---------------------------------------------------- templates, requests
+
+    match /entitlements/{cardId} {
+      allow read: if isAdmin() || ownsCard(cardId);
+    }
+
+    match /templateRequests/{id} {
+      allow read: if isAdmin() || (isClient() && resource.data.clientId == myClientId());
+    }
+
+    match /notifications/{id} {
+      allow read: if isAdmin() || (isClient() && resource.data.clientId == myClientId());
+      allow update: if isClient() && resource.data.clientId == myClientId()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+        && request.resource.data.read == true;
+    }
+
+    match /invites/{id} {
+      allow read: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if isAdmin();
+      allow read: if signedIn() && docId in ['pricing', 'library', 'app'];
+      // Pricing and the Default template change through savePricing / setDefaultTemplate.
+      allow write: if isAdmin() && docId in ['library', 'app', 'private'];
+    }
+
+    // ------------------------------------------------------------------- NFC
+
+    match /nfcTags/{tagId} {
+      allow read: if isAdmin();
+    }
+
+    match /nfcBatches/{batchId} {
+      allow read: if isAdmin();
+    }
+
+    // mail/ is the Trigger Email queue: Functions only. Everything else: denied.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

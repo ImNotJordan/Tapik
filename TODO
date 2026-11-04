@@ -1,0 +1,7 @@
+Instead of writing a specific client’s URL every time, flip the order:
+
+Pre-program cards in batches. The Admin Studio gets a “Generate tag IDs” button that creates, say, 50 unassigned IDs (/t/K7X2QD, /t/M4P9TR, …). You write each one to a blank card with NFC Tools and lock it. This is a one-time chore per batch of cards.
+Assign by tapping. When a client orders, you tap one of those blank-but-programmed cards with your iPhone. It opens /t/K7X2QD. Your server sees that tag isn’t assigned yet and you’re logged in as admin, so it shows an “Assign this card” screen. You pick the client, then tap Assign, and you’re done.
+For anyone else, tapping an unassigned card shows a neutral “This card isn’t set up yet” page.
+
+The phone only ever reads the card after the batch step. Reading is something iPhones do natively, with no app, so the daily work happens entirely in your web app on your iPhone. Reassigning or deactivating a card also stays a server-side change.
