@@ -71,7 +71,10 @@ export async function createSession(idToken: unknown, expect?: "admin" | "client
   let t;
   try {
     t = await adminAuth().verifyIdToken(idToken, true);
-  } catch {
+  } catch (e) {
+    // The code and message only, never the token: tells an expired sign-in apart from a server credential problem.
+    const err = e as { code?: string; message?: string };
+    console.warn("[session] ID token rejected:", err.code ?? "unknown", (err.message ?? "").slice(0, 300));
     return { ok: false, status: 401, error: "Your sign-in expired. Try again." };
   }
   if (Date.now() / 1000 - t.auth_time > RECENT_SIGN_IN_SECONDS) return { ok: false, status: 401, error: "Please sign in again." };
@@ -95,8 +98,14 @@ export async function createSession(idToken: unknown, expect?: "admin" | "client
   }
 
   const maxAgeSeconds = SESSION_DAYS[role] * 24 * 60 * 60;
-  const cookie = await adminAuth().createSessionCookie(idToken, { expiresIn: maxAgeSeconds * 1000 });
-  return { ok: true, cookie, maxAgeSeconds, role };
+  try {
+    const cookie = await adminAuth().createSessionCookie(idToken, { expiresIn: maxAgeSeconds * 1000 });
+    return { ok: true, cookie, maxAgeSeconds, role };
+  } catch (e) {
+    const err = e as { code?: string; message?: string };
+    console.error("[session] couldn't create the session cookie:", err.code ?? "unknown", (err.message ?? "").slice(0, 300));
+    return { ok: false, status: 401, error: "Sign-in didn't complete. Try again in a moment." };
+  }
 }
 
 /* ------------------------------------------------- development helpers */
