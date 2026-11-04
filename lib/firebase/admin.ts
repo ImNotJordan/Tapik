@@ -6,9 +6,9 @@ import "server-only";
  */
 import { applicationDefault, cert, getApps, initializeApp, type App, type Credential } from "firebase-admin/app";
 import { getVercelOidcToken } from "@vercel/functions/oidc";
-import { ExternalAccountClient } from "google-auth-library";
+import { IdentityPoolClient } from "google-auth-library";
 import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { Firestore, getFirestore } from "firebase-admin/firestore";
 import { getStorage, type Storage } from "firebase-admin/storage";
 import { EMULATOR_HOSTS, EMULATOR_PROJECT_ID, useEmulators } from "./config";
 
@@ -19,18 +19,45 @@ const APP_NAME = "tapik-admin";
  * Google's Workload Identity Federation exchanges it for an access token of the
  * tapik-web service account (only production deployments are trusted, DEPLOY.md).
  */
-function vercelCredential(): Credential | null {
+let federated: IdentityPoolClient | null | undefined;
+/** The last Vercel OIDC token seen in a request: cached work ('use cache') may run without the request's headers. */
+let lastOidcToken: string | undefined;
+
+async function vercelOidcToken(): Promise<string> {
+  try {
+    lastOidcToken = await getVercelOidcToken();
+    return lastOidcToken;
+  } catch (e) {
+    if (lastOidcToken) return lastOidcToken;
+    throw e;
+  }
+}
+
+/** Call in the request (outside 'use cache') before cached reads, so the token exchange has a token to use. */
+export async function primeFederatedToken(): Promise<void> {
+  if (!process.env.VERCEL) return;
+  await vercelOidcToken().catch(() => {});
+}
+
+/** The Vercel → Google token exchange client, or null when not on Vercel / not configured. One per server instance. */
+function vercelAuthClient(): IdentityPoolClient | null {
+  if (federated !== undefined) return federated;
   const { GCP_PROJECT_NUMBER: num, GCP_WORKLOAD_IDENTITY_POOL_ID: pool, GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID: provider, GCP_SERVICE_ACCOUNT_EMAIL: sa } = process.env;
-  if (!process.env.VERCEL || !num || !pool || !provider || !sa) return null;
-  const client = ExternalAccountClient.fromJSON({
+  if (!process.env.VERCEL || !num || !pool || !provider || !sa) return (federated = null);
+  federated = new IdentityPoolClient({
     type: "external_account",
     audience: `//iam.googleapis.com/projects/${num}/locations/global/workloadIdentityPools/${pool}/providers/${provider}`,
     subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
     token_url: "https://sts.googleapis.com/v1/token",
     service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${sa}:generateAccessToken`,
-    subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() },
+    subject_token_supplier: { getSubjectToken: () => vercelOidcToken() },
   });
-  if (!client) throw new Error("Couldn't set up Workload Identity Federation for Vercel. Check the GCP_* environment variables.");
+  return federated;
+}
+
+function vercelCredential(): Credential | null {
+  const client = vercelAuthClient();
+  if (!client) return null;
   return {
     async getAccessToken() {
       const { token } = await client.getAccessToken();
@@ -77,5 +104,17 @@ export function adminApp(): App {
 }
 
 export const adminAuth = (): Auth => getAuth(adminApp());
-export const adminDb = (): Firestore => getFirestore(adminApp());
+let federatedDb: Firestore | undefined;
+
+/**
+ * Firestore. On Vercel the client is built with the federated credential directly:
+ * firebase-admin's getFirestore() only accepts key files or application default
+ * credentials, not a custom credential (firestore/invalid-credential).
+ */
+export function adminDb(): Firestore {
+  const client = vercelAuthClient();
+  if (!client) return getFirestore(adminApp());
+  federatedDb ??= new Firestore({ projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID, authClient: client, preferRest: true });
+  return federatedDb;
+}
 export const adminStorage = (): Storage => getStorage(adminApp());

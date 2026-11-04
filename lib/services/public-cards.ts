@@ -32,14 +32,21 @@ async function readPublished(slug: string): Promise<{ bundle: CardBundle | null;
   return { bundle: null, redirectTo: (s.get("redirectTo") as string | undefined) ?? null };
 }
 
+async function prime() {
+  const { primeFederatedToken } = await import("@/lib/firebase/admin");
+  await primeFederatedToken();
+}
+
 export async function getCardBySlug(slug: string): Promise<CardBundle | null> {
   if (!isFirebaseMode) return api.getCardBySlug(slug);
+  await prime();
   return (await readPublished(slug)).bundle;
 }
 
 /** The current link for an old one, if the card was moved. */
 export async function getSlugRedirect(slug: string): Promise<string | null> {
   if (!isFirebaseMode) return null;
+  await prime();
   return (await readPublished(slug)).redirectTo;
 }
 
