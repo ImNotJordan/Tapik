@@ -12,10 +12,17 @@ type Props = {
   /** CSS variable of the colour behind the map: picks Google's light or dark style. */
   backgroundVar: string;
   /** Pin colours (any CSS colour; theme variables work, the marker lives inside the card). */
-  pinFill: string;
-  pinRing: string;
+  pinFill?: string;
+  pinRing?: string;
+  /** Starting zoom. */
   zoom?: number;
-  /** Editor only: the pin can be dragged to the exact entrance. */
+  /** When the pin is moved from outside (an address was picked), zoom in to at least this. */
+  focusZoom?: number;
+  /**
+   * Editor: no marker; the caller draws a pin fixed at the middle and moving the
+   * map moves the pin. onMove gets the new middle each time the map settles.
+   */
+  centerPin?: boolean;
   onMove?: (pos: { lat: number; lng: number }) => void;
   onReady?: () => void;
   /** Google refused the key (site not allowed, API off): the stand-in should show again. */
@@ -23,20 +30,23 @@ type Props = {
   className?: string;
 };
 
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+const same = (a: { lat: number; lng: number }, b: { lat: number; lng: number }) => Math.abs(a.lat - b.lat) < 2e-6 && Math.abs(a.lng - b.lng) < 2e-6;
+
 /**
  * A live Google map over the drawn stand-in. Loads only when it scrolls near the
  * viewport (each load is billed), fades in once the tiles are drawn, and stays
  * invisible if Google refuses the key, so the stand-in keeps showing.
  */
-export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRing, zoom = 16, onMove, onReady, onFailed, className }: Props) {
+export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill = "red", pinRing = "white", zoom = 16, focusZoom, centerPin, onMove, onReady, onFailed, className }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
   const marker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-  const latest = useRef({ lat, lng, label, onMove, onReady, onFailed });
+  const latest = useRef({ lat, lng, label, zoom, centerPin, onMove, onReady, onFailed });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    latest.current = { lat, lng, label, onMove, onReady, onFailed };
+    latest.current = { lat, lng, label, zoom, centerPin, onMove, onReady, onFailed };
   });
 
   useEffect(() => {
@@ -59,33 +69,35 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
           mapsLibrary("core"),
         ]);
         if (cancelled || refused) return;
-        const { lat: la, lng: ln } = latest.current;
+        const { lat: la, lng: ln, zoom: z } = latest.current;
         const dark = isDarkColor(getComputedStyle(el).getPropertyValue(backgroundVar));
         const m = new Map(el, {
           center: { lat: la, lng: ln },
-          zoom,
+          zoom: z,
           mapId: MAP_ID,
           colorScheme: dark ? ColorScheme.DARK : ColorScheme.LIGHT,
           disableDefaultUI: true,
           zoomControl: true,
           gestureHandling: "cooperative", // one finger scrolls the card, two move the map
           clickableIcons: false,
-          keyboardShortcuts: false,
+          keyboardShortcuts: Boolean(latest.current.centerPin), // editor: arrow keys move the map (and the pin)
         });
-        const draggable = Boolean(latest.current.onMove);
-        const mk = new AdvancedMarkerElement({
-          map: m,
-          position: { lat: la, lng: ln },
-          content: pinElement(pinFill, pinRing, latest.current.label),
-          title: draggable ? "Drag the pin to the entrance" : latest.current.label,
-          gmpDraggable: draggable,
-        });
-        if (draggable) {
-          mk.addListener("dragend", () => {
-            const p = mk.position;
-            if (!p) return;
-            const pos = typeof p.lat === "function" ? { lat: (p as google.maps.LatLng).lat(), lng: (p as google.maps.LatLng).lng() } : (p as google.maps.LatLngLiteral);
-            latest.current.onMove?.({ lat: pos.lat, lng: pos.lng });
+        if (latest.current.centerPin) {
+          // The middle is the pin. Report it when the map settles somewhere new
+          // (a pan from a picked address lands exactly on the pin, so it isn't echoed back).
+          m.addListener("idle", () => {
+            const c = m.getCenter();
+            if (!c) return;
+            const next = { lat: round6(c.lat()), lng: round6(c.lng()) };
+            if (same(next, latest.current)) return;
+            latest.current.onMove?.(next);
+          });
+        } else {
+          marker.current = new AdvancedMarkerElement({
+            map: m,
+            position: { lat: la, lng: ln },
+            content: pinElement(pinFill, pinRing, latest.current.label),
+            title: latest.current.label,
           });
         }
         event.addListenerOnce(m, "tilesloaded", () => {
@@ -94,7 +106,6 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
           latest.current.onReady?.();
         });
         map.current = m;
-        marker.current = mk;
       } catch {
         // No key, blocked script or offline: the stand-in stays.
       }
@@ -119,14 +130,19 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
       el.replaceChildren();
       setReady(false);
     };
-  }, [backgroundVar, pinFill, pinRing, zoom]);
+  }, [backgroundVar, pinFill, pinRing]);
 
-  // The pin moved (placed from the address, or dragged in the editor): follow it.
+  // The pin moved from outside (an address was picked): follow it. A move made on
+  // this map already has the pin in the middle, so nothing pans.
   useEffect(() => {
-    if (!map.current || !marker.current) return;
-    marker.current.position = { lat, lng };
-    map.current.panTo({ lat, lng });
-  }, [lat, lng]);
+    const m = map.current;
+    if (!m) return;
+    if (marker.current) marker.current.position = { lat, lng };
+    const c = m.getCenter();
+    if (c && same({ lat: c.lat(), lng: c.lng() }, { lat, lng })) return;
+    m.panTo({ lat, lng });
+    if (focusZoom && (m.getZoom() ?? 0) < focusZoom) m.setZoom(focusZoom);
+  }, [lat, lng, focusZoom]);
 
   return (
     <div

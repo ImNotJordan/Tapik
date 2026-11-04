@@ -49,7 +49,8 @@ export async function mapsLibrary(name: "maps"): Promise<google.maps.MapsLibrary
 export async function mapsLibrary(name: "marker"): Promise<google.maps.MarkerLibrary>;
 export async function mapsLibrary(name: "geocoding"): Promise<google.maps.GeocodingLibrary>;
 export async function mapsLibrary(name: "core"): Promise<google.maps.CoreLibrary>;
-export async function mapsLibrary(name: "maps" | "marker" | "geocoding" | "core") {
+export async function mapsLibrary(name: "places"): Promise<google.maps.PlacesLibrary>;
+export async function mapsLibrary(name: "maps" | "marker" | "geocoding" | "core" | "places") {
   if (!mapsEnabled) throw new Error("No Google Maps key.");
   await bootstrap();
   return google.maps.importLibrary(name);
@@ -70,6 +71,74 @@ export async function geocodeWithGoogle(address: string): Promise<Result<{ lat: 
     if (code === "REQUEST_DENIED") return { ok: false, error: "Address search is switched off for this map key. Turn on the Geocoding API for it in Google Cloud." };
     if (code === "OVER_QUERY_LIMIT") return { ok: false, error: "Too many address searches just now. Try again in a minute." };
     return { ok: false, error: "Address search didn’t respond. Check your connection and try again." };
+  }
+}
+
+/* ------------------------------------------------------- Address search */
+
+/** One suggestion under the address field. resolve() fetches where it is (billed once, when picked). */
+export type AddressHit = { id: string; main: string; secondary: string; resolve: () => Promise<{ address: string; lat: number; lng: number } | null> };
+
+/** Cards are Philippine: the country adds nothing to the address on the card. */
+const trimCountry = (s: string) => s.replace(/,\s*Philippines$/i, "").trim();
+
+let placesOff = false;
+let session: google.maps.places.AutocompleteSessionToken | null = null;
+
+/**
+ * Suggestions while someone types an address: Google Places (buildings and
+ * businesses by name, e.g. "Four-C Building"), biased to the Philippines and
+ * to `near`. If Places API (New) isn't enabled for the key, falls back to the
+ * Geocoding API (street addresses only).
+ */
+export async function searchAddress(input: string, near?: { lat: number; lng: number }): Promise<AddressHit[]> {
+  const q = input.trim();
+  if (q.length < 3) return [];
+  if (!placesOff) {
+    try {
+      const { AutocompleteSuggestion, AutocompleteSessionToken } = await mapsLibrary("places");
+      session ??= new AutocompleteSessionToken();
+      const { suggestions } = await AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: q,
+        sessionToken: session,
+        includedRegionCodes: ["ph"],
+        language: "en",
+        ...(near ? { locationBias: { center: near, radius: 50_000 } } : {}),
+      });
+      return suggestions.flatMap(({ placePrediction: p }) => {
+        if (!p) return [];
+        const full = trimCountry(p.text.text);
+        return [{
+          id: p.placeId,
+          main: p.mainText?.text ?? full,
+          secondary: trimCountry(p.secondaryText?.text ?? ""),
+          resolve: async () => {
+            const place = p.toPlace();
+            await place.fetchFields({ fields: ["location"] });
+            session = null; // a pick ends the billing session
+            const loc = place.location;
+            return loc ? { address: full, lat: loc.lat(), lng: loc.lng() } : null;
+          },
+        }];
+      });
+    } catch (e) {
+      const msg = String((e as Error).message ?? e);
+      if (!/denied|not (been )?(used|enabled|authori[sz]ed)|permission|forbidden|blocked/i.test(msg)) return [];
+      console.warn("[maps] Place search is off for this key (enable Places API (New)); using address lookup instead.");
+      placesOff = true;
+    }
+  }
+  try {
+    const { Geocoder } = await mapsLibrary("geocoding");
+    const { results } = await new Geocoder().geocode({ address: q, region: "ph" });
+    return results.slice(0, 5).map((r) => {
+      const full = trimCountry(r.formatted_address);
+      const [main, ...rest] = full.split(", ");
+      const at = { address: full, lat: r.geometry.location.lat(), lng: r.geometry.location.lng() };
+      return { id: r.place_id, main: main ?? full, secondary: rest.join(", "), resolve: async () => at };
+    });
+  } catch {
+    return [];
   }
 }
 
