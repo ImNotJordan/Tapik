@@ -316,6 +316,7 @@ export function StyledMap({ tone, className }: { tone: Tone; className?: string 
           pinFill="var(--c-accent)"
           pinRing={ground}
           onReady={() => setLive(true)}
+          onFailed={() => setLive(false)}
         />
       )}
     </div>

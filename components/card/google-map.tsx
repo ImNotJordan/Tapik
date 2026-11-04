@@ -18,6 +18,8 @@ type Props = {
   /** Editor only: the pin can be dragged to the exact entrance. */
   onMove?: (pos: { lat: number; lng: number }) => void;
   onReady?: () => void;
+  /** Google refused the key (site not allowed, API off): the stand-in should show again. */
+  onFailed?: () => void;
   className?: string;
 };
 
@@ -26,22 +28,28 @@ type Props = {
  * viewport (each load is billed), fades in once the tiles are drawn, and stays
  * invisible if Google refuses the key, so the stand-in keeps showing.
  */
-export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRing, zoom = 16, onMove, onReady, className }: Props) {
+export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRing, zoom = 16, onMove, onReady, onFailed, className }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
   const marker = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
-  const latest = useRef({ lat, lng, label, onMove, onReady });
+  const latest = useRef({ lat, lng, label, onMove, onReady, onFailed });
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    latest.current = { lat, lng, label, onMove, onReady };
+    latest.current = { lat, lng, label, onMove, onReady, onFailed };
   });
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     let cancelled = false;
-    const offAuth = onMapsAuthFailure(() => setReady(false));
+    // A refusal is final: Google draws its own error box in the map, which must never show.
+    let refused = false;
+    const offAuth = onMapsAuthFailure(() => {
+      refused = true;
+      setReady(false);
+      latest.current.onFailed?.();
+    });
 
     const start = async () => {
       try {
@@ -50,7 +58,7 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
           mapsLibrary("marker"),
           mapsLibrary("core"),
         ]);
-        if (cancelled) return;
+        if (cancelled || refused) return;
         const { lat: la, lng: ln } = latest.current;
         const dark = isDarkColor(getComputedStyle(el).getPropertyValue(backgroundVar));
         const m = new Map(el, {
@@ -81,7 +89,7 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
           });
         }
         event.addListenerOnce(m, "tilesloaded", () => {
-          if (cancelled) return;
+          if (cancelled || refused) return;
           setReady(true);
           latest.current.onReady?.();
         });
@@ -94,7 +102,7 @@ export function GoogleMapLayer({ lat, lng, label, backgroundVar, pinFill, pinRin
 
     const io = new IntersectionObserver(
       ([e]) => {
-        if (!e?.isIntersecting) return;
+        if (!e?.isIntersecting || refused) return;
         io.disconnect();
         void start();
       },
