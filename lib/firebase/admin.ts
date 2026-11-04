@@ -4,7 +4,9 @@ import "server-only";
  * Firebase Admin SDK for server components, route handlers and server actions.
  * Never import this from a client component ("server-only" makes that a build error).
  */
-import { applicationDefault, cert, getApps, initializeApp, type App } from "firebase-admin/app";
+import { applicationDefault, cert, getApps, initializeApp, type App, type Credential } from "firebase-admin/app";
+import { getVercelOidcToken } from "@vercel/functions/oidc";
+import { ExternalAccountClient } from "google-auth-library";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
 import { getStorage, type Storage } from "firebase-admin/storage";
@@ -13,12 +15,41 @@ import { EMULATOR_HOSTS, EMULATOR_PROJECT_ID, useEmulators } from "./config";
 const APP_NAME = "tapik-admin";
 
 /**
- * Credentials, in order: a service account key in FIREBASE_SERVICE_ACCOUNT_JSON, or
- * keyless Application Default Credentials (`gcloud auth application-default login`
- * locally; Workload Identity Federation on Vercel). The tapik-ph organization
- * blocks key creation, so keyless is the normal path.
+ * On Vercel: keyless. Vercel signs a short-lived OIDC token for this deployment;
+ * Google's Workload Identity Federation exchanges it for an access token of the
+ * tapik-web service account (only production deployments are trusted, DEPLOY.md).
+ */
+function vercelCredential(): Credential | null {
+  const { GCP_PROJECT_NUMBER: num, GCP_WORKLOAD_IDENTITY_POOL_ID: pool, GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID: provider, GCP_SERVICE_ACCOUNT_EMAIL: sa } = process.env;
+  if (!process.env.VERCEL || !num || !pool || !provider || !sa) return null;
+  const client = ExternalAccountClient.fromJSON({
+    type: "external_account",
+    audience: `//iam.googleapis.com/projects/${num}/locations/global/workloadIdentityPools/${pool}/providers/${provider}`,
+    subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+    token_url: "https://sts.googleapis.com/v1/token",
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${sa}:generateAccessToken`,
+    subject_token_supplier: { getSubjectToken: () => getVercelOidcToken() },
+  });
+  if (!client) throw new Error("Couldn't set up Workload Identity Federation for Vercel. Check the GCP_* environment variables.");
+  return {
+    async getAccessToken() {
+      const { token } = await client.getAccessToken();
+      if (!token) throw new Error("Workload Identity Federation returned no access token.");
+      const expiry = client.credentials.expiry_date ?? Date.now() + 3_000_000;
+      return { access_token: token, expires_in: Math.max(60, Math.floor((expiry - Date.now()) / 1000)) };
+    },
+  };
+}
+
+/**
+ * Credentials, in order: Vercel's keyless federation (above), a service account key in
+ * FIREBASE_SERVICE_ACCOUNT_JSON, or Application Default Credentials (locally:
+ * `gcloud auth application-default login`). The tapik-ph organization blocks
+ * key creation, so the keyless paths are the normal ones.
  */
 function credential() {
+  const vercel = vercelCredential();
+  if (vercel) return vercel;
   const raw = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (!raw) return applicationDefault();
   try {
