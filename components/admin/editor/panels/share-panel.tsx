@@ -4,6 +4,7 @@ import { Check, Copy, Download, ExternalLink, Nfc, Smartphone, CircleAlert } fro
 import { useRef, useState } from "react";
 import { checkSlugAvailable, downloadQrCode, hasUnpublishedChanges } from "@/lib/services/cards";
 import { useDB } from "@/lib/services/data";
+import { isFirebaseMode } from "@/lib/services/mode";
 import { writeNfcTag } from "@/lib/services/nfc";
 import { cn, formatDate, publicCardPath, publicCardUrl, slugify } from "@/lib/utils";
 import { validateSlug } from "@/lib/validate";
@@ -108,7 +109,10 @@ function SlugEditor() {
     patch({ slug: result.value });
     setInvalid("slug", null);
     toast.success("Link updated", {
-      description: card.status === "published" ? "Old QR codes and NFC cards point to the old link. Reprint or reprogram them." : undefined,
+      description:
+        card.status !== "published" ? undefined
+        : isFirebaseMode ? "The old link keeps working: it forwards to the new one, so printed QR codes and NFC cards still open the card."
+        : "Old QR codes and NFC cards point to the old link. Reprint or reprogram them.",
       action: { label: "Undo", onClick: () => { patch({ slug: before }); setValue(before); } },
     });
   };

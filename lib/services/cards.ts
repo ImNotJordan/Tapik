@@ -2,7 +2,8 @@
  * Card drafts: content edits, socials, photos, org chart, uploads, publish and review.
  * Edits are store actions (lib/store/actions); in Firebase mode the store writes
  * them to Firestore (lib/store/firebase-sync). Uploads go to Cloud Storage.
- * TODO(backend, phase 7): publishCard / unpublishCard / submitForReview / reviewDecision callables.
+ * Publishing and review go through Functions in Firebase mode (the public page
+ * shows a snapshot taken at publish time); the page is then refreshed at once.
  */
 import * as api from "@/lib/api";
 import { flushDB } from "@/lib/store/db";
@@ -15,8 +16,63 @@ export {
   patchCard, patchMember, patchOrgChart, patchPhoto, patchSocial, removeMember, removePhoto, removeSocial,
   reorderPhotos, reorderSocials, restorePhoto, restoreSocial, setCoverPhoto, setMembers,
 } from "@/lib/store/actions";
-export { publishCard, unpublishCard, writeNfcTag, downloadQrCode, type UploadKind } from "@/lib/api";
-export { approveCardReview, requestCardChanges, setCardPermissions, portalCardState, submitCardForReview } from "@/lib/store/portal";
+export { writeNfcTag, downloadQrCode, type UploadKind } from "@/lib/api";
+export { setCardPermissions, portalCardState } from "@/lib/store/portal";
+import * as portal from "@/lib/store/portal";
+import { readDB } from "@/lib/store/db";
+
+/** Asks the site to refresh these public pages now (after publish, unpublish, a link change). Best effort. */
+export async function refreshPublicPages(slugs: string[]): Promise<void> {
+  if (!isFirebaseMode || !slugs.length) return;
+  try {
+    await fetch("/api/revalidate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slugs }) });
+  } catch {
+    /* the page refreshes on its own within 5 minutes */
+  }
+}
+
+const slugOf = (cardId: string) => readDB().cards.find((c) => c.id === cardId)?.slug;
+
+export async function publishCard(cardId: string): Promise<Result<{ publishedAt: string }>> {
+  if (!isFirebaseMode) return api.publishCard(cardId);
+  const { call } = await import("./callable");
+  const r = await call<{ publishedAt: string; slug: string }>("publishCard", { cardId });
+  if (!r.ok) return r;
+  await refreshPublicPages([r.data.slug]);
+  return { ok: true, data: { publishedAt: r.data.publishedAt } };
+}
+
+export async function unpublishCard(cardId: string): Promise<Result> {
+  if (!isFirebaseMode) return api.unpublishCard(cardId);
+  const { call } = await import("./callable");
+  const r = await call<{ slug: string }>("unpublishCard", { cardId });
+  if (!r.ok) return r;
+  await refreshPublicPages([r.data.slug]);
+  return { ok: true, data: undefined };
+}
+
+export async function submitCardForReview(cardId: string): Promise<Result<{ submittedAt: string }>> {
+  if (!isFirebaseMode) return portal.submitCardForReview(cardId);
+  const { call } = await import("./callable");
+  return call<{ submittedAt: string }>("submitForReview", { cardId });
+}
+
+/** Approve a client's changes: publishes them and tells the client. */
+export async function approveCardReview(cardId: string): Promise<Result> {
+  if (!isFirebaseMode) return portal.approveCardReview(cardId);
+  const { call } = await import("./callable");
+  const r = await call<{ slug: string }>("reviewDecision", { cardId, decision: "approve" });
+  if (!r.ok) return r;
+  await refreshPublicPages([r.data.slug ?? slugOf(cardId) ?? ""].filter(Boolean));
+  return { ok: true, data: undefined };
+}
+
+export async function requestCardChanges(cardId: string, note: string): Promise<Result> {
+  if (!isFirebaseMode) return portal.requestCardChanges(cardId, note);
+  const { call } = await import("./callable");
+  const r = await call<{ slug: string }>("reviewDecision", { cardId, decision: "changes", note });
+  return r.ok ? { ok: true, data: undefined } : r;
+}
 
 /** Autosave: resolves once this card's edits are stored (Firebase) or immediately (mock). */
 export async function saveCardDraft(card: Card): Promise<Result<{ savedAt: string }>> {

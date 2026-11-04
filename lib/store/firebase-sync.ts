@@ -174,7 +174,8 @@ function publish() {
 /* ------------------------------------------------------------------ diff */
 
 /** Card fields that only Functions change (later phases), never a direct write. */
-const FUNCTION_ONLY: Record<string, number> = { status: 7, published_at: 7, review: 7, clientId: 5 };
+/** Card fields only Functions write (publish, review, ownership). The store's local copy is replaced by the listener. */
+const FUNCTION_ONLY = new Set(["status", "published_at", "review", "clientId"]);
 const SKIP = new Set(["id", "created_at", "updated_at"]);
 
 function patchFor(cardId: string): CardPatch {
@@ -230,10 +231,7 @@ export function record(prev: MockDB, next: MockDB) {
         pending.slugs.set(card.id, b as string);
         continue;
       }
-      if (k in FUNCTION_ONLY) {
-        notYet(`Card ${k}`, FUNCTION_ONLY[k]);
-        continue;
-      }
+      if (FUNCTION_ONLY.has(k)) continue;
       if (k === "permissions" && me.role !== "admin") continue;
       if (k === "templateId" && me.role !== "admin") {
         notYet("A client's template change", 6);
@@ -272,7 +270,6 @@ export function record(prev: MockDB, next: MockDB) {
     if (d0 !== d1) notYet("The Default template", 6);
   }
   if (!same(prev.pricing, next.pricing)) notYet("Template prices", 6);
-  if (!same(prev.snapshots, next.snapshots)) notYet("Publishing", 7);
   for (const [k, phase] of [["clients", 5], ["invites", 5], ["templateRequests", 6], ["entitlements", 6], ["notifications", 6]] as const) {
     if (!same(prev[k], next[k])) notYet(k, phase);
   }
@@ -383,7 +380,9 @@ async function commit(ops: Pending) {
     if (bundle) await httpsCallable(firebaseFunctions(), "createCardFromBundle")({ bundle: JSON.parse(JSON.stringify(bundle)) });
   }
   for (const [cardId, slug] of ops.slugs) {
-    await httpsCallable(firebaseFunctions(), "changeSlug")({ cardId, slug });
+    const moved = (await httpsCallable(firebaseFunctions(), "changeSlug")({ cardId, slug })).data as { slug: string; previous: string };
+    // Both public pages change: the old link now forwards, the new one shows the card.
+    void fetch("/api/revalidate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slugs: [moved.previous, moved.slug] }) }).catch(() => {});
   }
 
   const writes: ((b: ReturnType<typeof fs.writeBatch>) => void)[] = [];

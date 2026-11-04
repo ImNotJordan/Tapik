@@ -19,11 +19,12 @@ import { z } from "zod";
 import { BRAND, emailSentOnBehalf } from "@/lib/brand";
 import { DEFAULT_SECTION_ORDER } from "@/lib/design/sections";
 import { templatePricing, type PricingSettings } from "@/lib/entitlements";
-import { COL, decode, encode } from "@/lib/firebase/model";
+import { COL, encode } from "@/lib/firebase/model";
 import { PRICING } from "@/lib/pricing";
 import { cardPermissions, id } from "@/lib/schemas";
-import type { Card, CardBundle } from "@/lib/types";
+import type { Card } from "@/lib/types";
 import { getTemplate, TEMPLATES } from "@/templates/registry";
+import { bundleFor } from "./bundle";
 import { parse, requireAdmin } from "./guards";
 import { queueMail, simpleHtml } from "./mail";
 import { appOrigin, enforceAppCheck, isEmulator } from "./params";
@@ -271,22 +272,6 @@ async function findByToken(token: string): Promise<Found | null> {
     : d.status === "expired" || d.expiresAt.toMillis() < Date.now() ? "expired"
     : "valid";
   return { ref: doc.ref, data: d, state };
-}
-
-async function bundleFor(cardId: string): Promise<CardBundle | null> {
-  const ref = db().collection(COL.cards).doc(cardId);
-  const [card, socials, photos, members] = await Promise.all([ref.get(), ref.collection(COL.socials).get(), ref.collection(COL.photos).get(), ref.collection(COL.orgMembers).get()]);
-  if (!card.exists) return null;
-  const { orgChart, lastEditedBy: _a, lastEditedSections: _b, ...rest } = card.data()!;
-  void _a; void _b;
-  const byPos = (a: { position: number }, b: { position: number }) => a.position - b.position;
-  return {
-    card: decode<Card>({ ...rest, id: cardId }, { renameTopLevel: true }),
-    socials: socials.docs.map((d) => decode<CardBundle["socials"][number]>({ ...d.data(), id: d.id })).sort(byPos),
-    photos: photos.docs.map((d) => decode<CardBundle["photos"][number]>({ ...d.data(), id: d.id })).sort(byPos),
-    orgChart: orgChart ? decode(orgChart) : undefined,
-    orgMembers: members.docs.map((d) => decode<CardBundle["orgMembers"][number]>({ ...d.data(), id: d.id })).sort(byPos),
-  };
 }
 
 /** What the invite page shows. Only the token holder (the client) can call it meaningfully. */

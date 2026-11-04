@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import { getCardBySlug, listPublishedSlugs } from "@/lib/services/public-cards";
+import { permanentRedirect } from "next/navigation";
+import { getCardBySlug, getSlugRedirect, listPublishedSlugs } from "@/lib/services/public-cards";
 import { PublicCard } from "@/components/card/public-card";
 
 export async function generateStaticParams() {
@@ -28,5 +29,10 @@ export async function generateMetadata({ params }: PageProps<"/c/[slug]">): Prom
 export default async function CardPage({ params }: PageProps<"/c/[slug]">) {
   const { slug } = await params;
   const bundle = await getCardBySlug(slug);
+  if (!bundle) {
+    // A card that moved to a new link: forward old QR codes and NFC cards.
+    const moved = await getSlugRedirect(slug);
+    if (moved) permanentRedirect(`/c/${moved}`);
+  }
   return <PublicCard slug={slug} serverBundle={bundle} />;
 }

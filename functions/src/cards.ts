@@ -95,7 +95,7 @@ export const changeSlug = onCall({ enforceAppCheck }, async (req) => {
       tx.set(db().collection(COL.publicCards).doc(slug), { ...data, bundle: { ...data.bundle, card: { ...data.bundle.card, slug } } });
       tx.delete(pub.ref);
     }
-    // TODO(phase 7): revalidate /c/{old} and /c/{slug} after commit.
+    // The browser that made the change refreshes /c/{old} and /c/{slug} (/api/revalidate).
     return { slug, previous: old };
   });
 });
