@@ -1,8 +1,8 @@
 /**
- * Outgoing email through the "Trigger Email from Firestore" extension: a
- * document in mail/ is one email. Ids are deterministic so a retried call
- * never sends twice (create() fails on an existing id). On the emulators the
- * extension isn't running, so the email is printed to the Functions log instead.
+ * Outgoing email: a document in mail/ is one email, sent by sendMail
+ * (send-mail.ts, SMTP). Ids are deterministic so a retried call
+ * never sends twice (create() fails on an existing id). On the emulators nothing
+ * is sent: the email is printed to the Functions log instead.
  */
 import { getFirestore, FieldValue } from "firebase-admin/firestore";
 import { logger } from "firebase-functions";

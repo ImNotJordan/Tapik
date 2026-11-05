@@ -19,3 +19,4 @@ export { createCardFromBundle, checkSlug, changeSlug, onCardWritten } from "./ca
 export { onPhotoUpload, onPhotoCreated } from "./media";
 export { createClientCard, sendInvite, resendInvite, revokeInvite, getInvite, acceptInvite, expireInvites } from "./invites";
 export { publishCard, unpublishCard, submitForReview, reviewDecision } from "./publish";
+export { sendMail } from "./send-mail";
