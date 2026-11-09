@@ -19,4 +19,8 @@ export { createCardFromBundle, checkSlug, changeSlug, onCardWritten } from "./ca
 export { onPhotoUpload, onPhotoCreated } from "./media";
 export { createClientCard, sendInvite, resendInvite, revokeInvite, getInvite, acceptInvite, expireInvites } from "./invites";
 export { publishCard, unpublishCard, submitForReview, reviewDecision, setTemplateUnlock } from "./publish";
+export {
+  requestTemplate, cancelTemplateRequest, applyTemplateAsClient,
+  sendTemplatePaymentDetails, markTemplateRequestPaid, compTemplateRequest, declineTemplateRequest, undoTemplateRequestAction,
+} from "./requests";
 export { sendMail } from "./send-mail";

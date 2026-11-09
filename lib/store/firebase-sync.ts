@@ -49,11 +49,17 @@ type CardPatch = { set: Record<string, unknown>; del: Set<string>; sections: Set
 type SubKind = "socials" | "photos" | "orgMembers";
 type SubOp = { kind: SubKind; cardId: string; id: string; doc: object | null };
 
+/** A client's template switch: saved through the applyTemplateAsClient Function (clients can't write the look fields). */
+type Look = Pick<Card, "templateId" | "themeId" | "fontPairingId" | "buttonShape" | "buttonFill">;
+
 type Pending = {
   newCards: Set<string>;
   cards: Map<string, CardPatch>;
   subs: Map<string, SubOp>;
   slugs: Map<string, string>;
+  looks: Map<string, Look>;
+  /** Notifications the client marked read (the one field they may change). */
+  reads: Set<string>;
   library?: Partial<Server["library"]>;
   favorites?: string[];
 };
@@ -79,7 +85,7 @@ function emptyServer(): Server {
   };
 }
 
-const emptyPending = (): Pending => ({ newCards: new Set(), cards: new Map(), subs: new Map(), slugs: new Map() });
+const emptyPending = (): Pending => ({ newCards: new Set(), cards: new Map(), subs: new Map(), slugs: new Map(), looks: new Map(), reads: new Set() });
 
 let host: SyncHost | null = null;
 let me: Identity | null = null;
@@ -88,7 +94,7 @@ let pending = emptyPending();
 /** What the current flush is writing: still shown until it lands (or rolls back). */
 let inflight: Pending | null = null;
 /** Created or moved by a Function: shown until the listener has caught up. */
-const settling = { newCards: new Set<string>(), slugs: new Map<string, string>() };
+const settling = { newCards: new Set<string>(), slugs: new Map<string, string>(), looks: new Map<string, Look>() };
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let inFlight: Promise<SyncResult> | null = null;
 let hydrated = false;
@@ -112,6 +118,7 @@ function assemble(): MockDB {
   // Settled once the listener shows the server's version.
   for (const id of settling.newCards) if (server.cards.has(id)) settling.newCards.delete(id);
   for (const [id, slug] of settling.slugs) if (server.cards.get(id)?.slug === slug) settling.slugs.delete(id);
+  for (const [id, look] of settling.looks) if (server.cards.get(id)?.templateId === look.templateId) settling.looks.delete(id);
   const layers = [inflight, pending].filter((l): l is Pending => !!l);
 
   const cards = new Map(server.cards);
@@ -143,6 +150,10 @@ function assemble(): MockDB {
     const c = cards.get(cardId);
     if (c) cards.set(cardId, { ...c, slug });
   }
+  for (const [cardId, look] of [...settling.looks, ...layers.flatMap((l) => [...l.looks])]) {
+    const c = cards.get(cardId);
+    if (c) cards.set(cardId, { ...c, ...look, customTokens: undefined });
+  }
   // New cards (not on the server yet) come from the local view.
   const local = host?.getDB();
   const newBundles = local ? [...newIds].map((id) => bundleFromDB(local, id)).filter((b): b is CardBundle => !!b) : [];
@@ -162,7 +173,7 @@ function assemble(): MockDB {
     templateRequests: [...server.requests.values()].sort((a, b) => Date.parse(b.requestedAt) - Date.parse(a.requestedAt)),
     entitlements: [...server.entitlements].map(([cardId, unlockedTemplateIds]) => ({ cardId, unlockedTemplateIds })),
     changeLog: [...server.changeLog.values()].sort((a, b) => Date.parse(a.at) - Date.parse(b.at)),
-    notifications: [...server.notifications.values()].sort((a, b) => Date.parse(b.at) - Date.parse(a.at)),
+    notifications: [...server.notifications.values()].map((n) => (layers.some((l) => l.reads.has(n.id)) ? { ...n, read: true } : n)).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)),
     pricing: server.pricing.overrides,
   };
 }
@@ -177,6 +188,8 @@ function publish() {
 /** Card fields only Functions write (publish, review, ownership). The store's local copy is replaced by the listener. */
 const FUNCTION_ONLY = new Set(["status", "published_at", "review", "clientId"]);
 const SKIP = new Set(["id", "created_at", "updated_at"]);
+/** The look fields a client can't write directly (firestore.rules): a template switch goes through a Function. */
+const LOOK_KEYS = new Set(["templateId", "fontPairingId", "buttonShape", "buttonFill", "customTokens"]);
 
 function patchFor(cardId: string): CardPatch {
   let p = pending.cards.get(cardId);
@@ -222,6 +235,10 @@ export function record(prev: MockDB, next: MockDB) {
       continue;
     }
     if (pending.newCards.has(card.id) || same(old, card)) continue;
+    if (me.role !== "admin" && old.templateId !== card.templateId) {
+      const { templateId, themeId, fontPairingId, buttonShape, buttonFill } = card;
+      pending.looks.set(card.id, { templateId, themeId, fontPairingId, buttonShape, buttonFill });
+    }
     const keys = new Set([...Object.keys(old), ...Object.keys(card)]);
     for (const k of keys) {
       const a = (old as Record<string, unknown>)[k];
@@ -233,8 +250,10 @@ export function record(prev: MockDB, next: MockDB) {
       }
       if (FUNCTION_ONLY.has(k)) continue;
       if (k === "permissions" && me.role !== "admin") continue;
-      if (k === "templateId" && me.role !== "admin") {
-        notYet("A client's template change", 6);
+      if (me.role !== "admin" && LOOK_KEYS.has(k)) continue;
+      // While a client's template switch is on its way, a theme change rides along with it.
+      if (k === "themeId" && pending.looks.has(card.id)) {
+        pending.looks.get(card.id)!.themeId = card.themeId;
         continue;
       }
       const p = patchFor(card.id);
@@ -270,7 +289,12 @@ export function record(prev: MockDB, next: MockDB) {
     if (d0 !== d1) notYet("The Default template", 6);
   }
   if (!same(prev.pricing, next.pricing)) notYet("Template prices", 6);
-  for (const [k, phase] of [["clients", 5], ["invites", 5], ["templateRequests", 6], ["entitlements", 6], ["notifications", 6]] as const) {
+  if (me.role === "client") {
+    const wasRead = new Set(prev.notifications.filter((n) => n.read).map((n) => n.id));
+    for (const n of next.notifications) if (n.read && !wasRead.has(n.id)) pending.reads.add(n.id);
+  }
+  // Requests, unlocks and notifications are written by Functions (functions/src/requests.ts); clients and invites too.
+  for (const [k, phase] of [["clients", 5], ["invites", 5], ["templateRequests", 6], ["entitlements", 6]] as const) {
     if (!same(prev[k], next[k])) notYet(k, phase);
   }
   scheduleFlush();
@@ -284,7 +308,7 @@ function scheduleFlush(ms = 800) {
 }
 
 function hasPending() {
-  return pending.newCards.size + pending.cards.size + pending.subs.size + pending.slugs.size > 0 || !!pending.library || !!pending.favorites;
+  return pending.newCards.size + pending.cards.size + pending.subs.size + pending.slugs.size + pending.looks.size + pending.reads.size > 0 || !!pending.library || !!pending.favorites;
 }
 
 const FRIENDLY: Record<string, string> = {
@@ -319,6 +343,8 @@ function requeue(older: Pending) {
     }
     for (const [k, op] of src.subs) merged.subs.set(k, op);
     for (const [k, v] of src.slugs) merged.slugs.set(k, v);
+    for (const [k, v] of src.looks) merged.looks.set(k, v);
+    src.reads.forEach((id) => merged.reads.add(id));
     if (src.library) merged.library = { ...merged.library, ...src.library };
     if (src.favorites) merged.favorites = src.favorites;
   }
@@ -347,6 +373,7 @@ export function flush(): Promise<SyncResult> {
       // Card edits are already in Firestore's local cache; Function results land via the listener.
       batchOps.newCards.forEach((id) => settling.newCards.add(id));
       batchOps.slugs.forEach((slug, id) => settling.slugs.set(id, slug));
+      batchOps.looks.forEach((look, id) => settling.looks.set(id, look));
       return { ok: true, savedAt: new Date().toISOString() };
     })
     .catch((e): SyncResult => {
@@ -385,6 +412,10 @@ async function commit(ops: Pending) {
     void fetch("/api/revalidate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ slugs: [moved.previous, moved.slug] }) }).catch(() => {});
   }
 
+  for (const [cardId, look] of ops.looks) {
+    await httpsCallable(firebaseFunctions(), "applyTemplateAsClient")({ cardId, templateId: look.templateId, themeId: look.themeId });
+  }
+
   const writes: ((b: ReturnType<typeof fs.writeBatch>) => void)[] = [];
   for (const [cardId, p] of ops.cards) {
     if (ops.newCards.has(cardId) || !p.touched) continue;
@@ -404,6 +435,7 @@ async function commit(ops: Pending) {
     const ref = fs.doc(db, COL.cards, op.cardId, op.kind, op.id);
     writes.push((b) => (op.doc ? b.set(ref, encode(op.doc!)) : b.delete(ref)));
   }
+  for (const nid of ops.reads) writes.push((b) => b.update(fs.doc(db, COL.notifications, nid), { read: true }));
   if (ops.library) {
     const lib = ops.library;
     writes.push((b) => b.set(fs.doc(db, COL.settings, SETTINGS.library), { ...encode(lib), updatedAt: fs.serverTimestamp() }, { merge: true }));
