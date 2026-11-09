@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, BadgeCheck, CircleCheck, Gift, Inbox, Search, Send, X, XCircle } from "lucide-react";
-import { memo, useCallback, useId, useMemo, useState, type ReactNode } from "react";
+import { ArrowRight, BadgeCheck, Check, CircleCheck, Copy, Expand, Gift, Inbox, LoaderCircle, Search, Send, TriangleAlert, X, XCircle } from "lucide-react";
+import { memo, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { OPEN_REQUEST } from "@/lib/entitlements";
+import { getPaymentProof } from "@/lib/services/payments";
 import { bundleFromDB } from "@/lib/mock";
 import { formatPeso } from "@/lib/pricing";
 import { useDB } from "@/lib/services/data";
-import { type AdminResult, compRequest, declineRequest, markRequestPaid, paymentEmail, requestTemplateName, requestThemeName, sendPaymentDetailsFor } from "@/lib/services/requests";
+import { type AdminResult, approveRequest, compRequest, declineRequest, markRequestPaid, paymentEmail, rejectPayment, requestTemplateName, requestThemeName, sendPaymentDetailsFor } from "@/lib/services/requests";
 import type { CardBundle, Client, TemplateRequest, TemplateRequestStatus } from "@/lib/types";
 import { cn, formatDate, formatRelative, initials } from "@/lib/utils";
 import { getTemplate, lookFor, TEMPLATES } from "@/templates/registry";
@@ -21,15 +23,22 @@ import { EmailPreview, PaymentEmailBody } from "@/components/email/email-preview
 import { TemplateThumbnail } from "@/components/templates/template-thumbnail";
 import { PageHeader } from "./studio-shell";
 
-type Filter = "pending" | "awaiting_payment" | "paid" | "approved" | "declined" | "all";
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: "pending", label: "Pending" },
-  { id: "awaiting_payment", label: "Awaiting payment" },
-  { id: "paid", label: "Paid" },
-  { id: "approved", label: "Approved" },
-  { id: "declined", label: "Declined" },
-  { id: "all", label: "All" },
+/**
+ * Status filters. QR payments: payment_submitted needs review (the default), then
+ * pending_payment / payment_rejected wait on the client. The manual flow (QR payments
+ * off) files pending and awaiting_payment under Pending payment, and paid under Approved.
+ */
+type Filter = "payment_submitted" | "pending_payment" | "payment_rejected" | "approved" | "declined" | "all";
+const FILTERS: { id: Filter; label: string; statuses: TemplateRequestStatus[] }[] = [
+  { id: "payment_submitted", label: "Payment submitted", statuses: ["payment_submitted"] },
+  { id: "pending_payment", label: "Pending payment", statuses: ["pending_payment", "pending", "awaiting_payment"] },
+  { id: "payment_rejected", label: "Payment rejected", statuses: ["payment_rejected"] },
+  { id: "approved", label: "Approved", statuses: ["approved", "paid"] },
+  { id: "declined", label: "Declined", statuses: ["declined"] },
+  { id: "all", label: "All", statuses: [] },
 ];
+const inFilter = (f: Filter, st: TemplateRequestStatus) => f === "all" || FILTERS.find((x) => x.id === f)!.statuses.includes(st);
+/** Bulk actions belong to the manual flow (send details, mark paid). */
 const OPEN: TemplateRequestStatus[] = ["pending", "awaiting_payment"];
 
 type Row = { r: TemplateRequest; client: Client | undefined; bundle: CardBundle | null };
@@ -40,7 +49,7 @@ export function TemplateRequests() {
   const router = useRouter();
   const params = useSearchParams();
   const toast = useToast();
-  const [filter, setFilter] = useState<Filter>("pending");
+  const [filter, setFilter] = useState<Filter>(() => (FILTERS.some((f) => f.id === params.get("filter")) ? (params.get("filter") as Filter) : "payment_submitted"));
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const [openId, setOpenId] = useState<string | null>(params.get("request"));
@@ -67,15 +76,16 @@ export function TemplateRequests() {
   }, [rows]);
   const inTemplate = rows.filter(({ r }) => tplFilter === "all" || r.templateId === tplFilter);
   const counts = useMemo(() => {
-    const c: Record<Filter, number> = { pending: 0, awaiting_payment: 0, paid: 0, approved: 0, declined: 0, all: inTemplate.length };
+    const c = Object.fromEntries(FILTERS.map((f) => [f.id, 0])) as Record<Filter, number>;
+    c.all = inTemplate.length;
     inTemplate.forEach(({ r }) => {
-      if (r.status in c) c[r.status as Filter]++;
+      for (const f of FILTERS) if (f.id !== "all" && f.statuses.includes(r.status)) c[f.id]++;
     });
     return c;
   }, [inTemplate]);
 
   const q = query.trim().toLowerCase();
-  const shown = inTemplate.filter(({ r, client }) => (filter === "all" || r.status === filter) && (!q || [client?.name, client?.email, client?.company].some((v) => v?.toLowerCase().includes(q))));
+  const shown = inTemplate.filter(({ r, client }) => inFilter(filter, r.status) && (!q || [client?.name, client?.email, client?.company].some((v) => v?.toLowerCase().includes(q))));
   const selectable = shown.filter(({ r }) => OPEN.includes(r.status)).map(({ r }) => r.id);
   // Selection only counts requests that are still open and visible.
   const picked = selected.filter((id) => selectable.includes(id));
@@ -124,7 +134,7 @@ export function TemplateRequests() {
     <div className="mx-auto flex max-w-[1240px] flex-col gap-6 px-4 py-6 sm:px-6 lg:px-10 lg:py-10">
       <PageHeader
         title="Template requests"
-        description="Clients who asked for a paid template. Nothing is charged in the app: send payment details, then mark it paid to unlock the template for their card."
+        description="Clients who asked for a paid template. They pay with the InstaPay QR and send their receipt; check it here, then approve to unlock the template and put it on their card."
         actions={
           <LinkButton href="/admin/settings/templates" variant="secondary">
             Templates & pricing
@@ -208,7 +218,7 @@ export function TemplateRequests() {
           {shown.length === 0 ? (
             <div className="flex flex-col items-start gap-3 rounded-2xl border border-dashed border-studio-line-strong bg-studio-surface px-6 py-10">
               <p className="text-base font-semibold">{q ? `No requests match “${query.trim()}”` : `No ${FILTERS.find((f) => f.id === filter)!.label.toLowerCase()} requests`}</p>
-              <p className="text-sm text-studio-ink-3">{filter === "pending" && !q ? "You’re all caught up." : "Try another status or search."}</p>
+              <p className="text-sm text-studio-ink-3">{filter === "payment_submitted" && !q ? "No payments to verify. You’re all caught up." : "Try another status or search."}</p>
               <Button
                 size="sm"
                 icon={<X aria-hidden className="size-4" />}
@@ -250,6 +260,7 @@ export function TemplateRequests() {
                     <th scope="col" className="py-2 pr-3 text-right">Price</th>
                     <th scope="col" className="py-2 pr-3">Client note</th>
                     <th scope="col" className="py-2 pr-3">Requested</th>
+                    <th scope="col" className="py-2 pr-3">Payment submitted</th>
                     <th scope="col" className="py-2 pr-3">Status</th>
                     <th scope="col" className="py-2 pr-3">
                       <span className="sr-only">Open</span>
@@ -384,6 +395,15 @@ const RequestRow = memo(function RequestRow({
           {formatRelative(r.requestedAt)}
         </time>
       </td>
+      <td className="py-2 pr-3 whitespace-nowrap text-studio-ink-2">
+        {r.payment?.submittedAt ? (
+          <time dateTime={r.payment.submittedAt} title={formatDate(r.payment.submittedAt)}>
+            {formatRelative(r.payment.submittedAt)}
+          </time>
+        ) : (
+          <span className="text-studio-ink-3">—</span>
+        )}
+      </td>
       <td className="py-2 pr-3">
         <StatusChip kind="request" status={r.status} />
       </td>
@@ -398,7 +418,7 @@ const RequestRow = memo(function RequestRow({
 
 /* ----------------------------------------------------------------- Drawer */
 
-type Act = "send" | "paid" | "comp" | "decline" | null;
+type Act = "send" | "paid" | "comp" | "decline" | "approve" | "approve-noproof" | "reject" | null;
 
 function RequestDrawer({
   row,
@@ -420,8 +440,10 @@ function RequestDrawer({
   const { r, client, bundle } = shown;
   const name = requestTemplateName(r);
   const theme = requestThemeName(r);
-  const isOpen = OPEN.includes(r.status);
+  const isOpen = OPEN_REQUEST.includes(r.status);
+  const manual = OPEN.includes(r.status);
   const who = client?.name ?? "this client";
+  const first = client ? (client.name.split(" ")[0] === "Dr." ? client.name : client.name.split(" ")[0]) : "the client";
 
   return (
     <>
@@ -432,7 +454,28 @@ function RequestDrawer({
         description={`Previewed in ${theme} · ${formatPeso(r.price)}`}
         className="sm:w-[460px]"
         footer={
-          isOpen && client ? (
+          isOpen && client && r.status === "payment_submitted" ? (
+            <div className="grid w-full grid-cols-2 gap-2">
+              <Button variant="primary" className="col-span-2 h-11" icon={<CircleCheck aria-hidden className="size-4" />} onClick={() => setAct("approve")}>
+                Approve & apply
+              </Button>
+              <Button className="h-11" icon={<TriangleAlert aria-hidden className="size-4" />} onClick={() => setAct("reject")}>
+                Reject payment
+              </Button>
+              <Button variant="danger-ghost" className="h-11" icon={<XCircle aria-hidden className="size-4" />} onClick={() => setAct("decline")}>
+                Decline
+              </Button>
+            </div>
+          ) : isOpen && client && !manual ? (
+            <div className="grid w-full grid-cols-2 gap-2">
+              <Button className="h-11" icon={<BadgeCheck aria-hidden className="size-4" />} onClick={() => setAct("approve-noproof")}>
+                Approve without proof
+              </Button>
+              <Button variant="danger-ghost" className="h-11" icon={<XCircle aria-hidden className="size-4" />} onClick={() => setAct("decline")}>
+                Decline
+              </Button>
+            </div>
+          ) : isOpen && client ? (
             <div className="grid w-full grid-cols-2 gap-2">
               {r.status === "pending" ? (
                 <Button variant="primary" className="col-span-2 h-11" icon={<Send aria-hidden className="size-4" />} onClick={() => setAct("send")}>
@@ -485,10 +528,17 @@ function RequestDrawer({
             <StatusChip kind="request" status={r.status} />
           </div>
 
+          {r.payment && <PaymentProof r={r} />}
+          {(r.status === "pending_payment" || r.status === "payment_rejected") && (
+            <p className="rounded-lg bg-studio-raised px-3 py-2 text-2xs text-studio-ink-2">
+              {r.status === "pending_payment" ? `Waiting for ${first} to pay with the InstaPay QR and send the receipt. You’ll get an email when they do.` : `Waiting for ${first} to check the payment and send it again.`}
+            </p>
+          )}
+
           {bundle && <SideBySide bundle={bundle} r={r} name={name} />}
           {isOpen && (
             <p className="rounded-lg bg-studio-raised px-3 py-2 text-2xs text-studio-ink-2">
-              Unlocking never switches {client ? `${client.name.split(" ")[0] === "Dr." ? client.name : client.name.split(" ")[0]}’s` : "the"} card. They get a notice and tap <span className="font-semibold">Apply now</span> in their portal when they’re ready.
+              Approving unlocks {name} and puts it on {client ? `${first}’s` : "the"} card right away, live card included (only its look changes; unpublished edits stay unpublished). They can switch back from their portal.
             </p>
           )}
 
@@ -506,6 +556,7 @@ function RequestDrawer({
             {r.paidAmount != null && <Detail term="Paid">{formatPeso(r.paidAmount)}</Detail>}
             {r.paymentRef && <Detail term="Reference">{r.paymentRef}</Detail>}
             {r.compReason && <Detail term="Approved free">{r.compReason}</Detail>}
+            {r.approvedWithoutProof && <Detail term="Approved without proof">{r.approvedWithoutProof}</Detail>}
             {r.adminNote && <Detail term={r.status === "declined" ? "Note to client" : "Your note"}>{r.adminNote}</Detail>}
             {bundle && (
               <Detail term="Card">
@@ -543,6 +594,39 @@ function RequestDrawer({
         <>
           <PaymentDialog key={`send-${r.id}-${act === "send"}`} open={act === "send"} onOpenChange={(v) => !v && setAct(null)} r={r} client={client} onDone={(res) => done(res, `Payment details sent to ${who}`, `${name} is now awaiting payment.`, [r.id]) && setAct(null)} />
           <PaidDialog key={`paid-${r.id}-${act === "paid"}`} open={act === "paid"} onOpenChange={(v) => !v && setAct(null)} r={r} name={name} who={who} onDone={(res) => done(res, `${name} unlocked for ${who}`, "Marked as paid. They were notified.", [r.id]) && setAct(null)} />
+          <ApproveDialog
+            key={`approve-${r.id}-${act === "approve"}`}
+            open={act === "approve"}
+            onOpenChange={(v) => !v && setAct(null)}
+            r={r}
+            name={name}
+            who={who}
+            onConfirm={async () => done(await approveRequest(r.id, "payment_submitted"), `${name} is on ${first}’s card`, "Unlocked and applied. They were notified.", [r.id]) && setAct(null)}
+          />
+          <ReasonDialog
+            key={`noproof-${r.id}-${act === "approve-noproof"}`}
+            open={act === "approve-noproof"}
+            onOpenChange={(v) => !v && setAct(null)}
+            title={`Approve ${name} without a payment proof?`}
+            description={`${name} unlocks and goes on ${who}’s card right away. Use this when you’ve confirmed the payment another way, or it’s on the house. The reason is kept for your records.`}
+            label="Reason"
+            placeholder="e.g. Paid in cash at the office, or a launch promo"
+            confirm="Approve & apply"
+            icon={<BadgeCheck aria-hidden className="size-4" />}
+            onConfirm={async (reason) => done(await approveRequest(r.id, r.status as "pending_payment" | "payment_rejected", reason), `${name} is on ${first}’s card`, "Unlocked and applied without a proof.", [r.id]) && setAct(null)}
+          />
+          <ReasonDialog
+            key={`reject-${r.id}-${act === "reject"}`}
+            open={act === "reject"}
+            onOpenChange={(v) => !v && setAct(null)}
+            title="Reject this payment?"
+            description={`${first} sees your note and can submit the payment again. Nothing changes on their card.`}
+            label={`Note to ${first}`}
+            placeholder="e.g. We couldn’t find this reference number. Please check it against your receipt."
+            confirm="Reject payment"
+            danger
+            onConfirm={async (note) => done(await rejectPayment(r.id, note), `Payment rejected for ${who}`, "They’ll see your note and can resubmit.", [r.id]) && setAct(null)}
+          />
           <ReasonDialog
             key={`comp-${r.id}-${act === "comp"}`}
             open={act === "comp"}
@@ -560,7 +644,7 @@ function RequestDrawer({
             open={act === "decline"}
             onOpenChange={(v) => !v && setAct(null)}
             title={`Decline ${name}?`}
-            description={`Your note is shown to ${who} in their portal and emailed to them, so explain why and what they could pick instead.`}
+            description={`Your note is shown to ${who} in their portal and emailed to them, so explain why and what they could pick instead.${r.payment ? " They already sent a payment: the email tells them you’ll contact them about a refund." : ""}`}
             label={`Note to ${who.split(" ")[0] === "Dr." ? who : who.split(" ")[0]}`}
             placeholder="e.g. Folio doesn’t have room for your three branches. Landmark does, and it’s free."
             confirm="Decline request"
@@ -570,6 +654,160 @@ function RequestDrawer({
         </>
       )}
     </>
+  );
+}
+
+/** The client's payment: receipt (zoom, full size), reference (copy), amount vs price, when. */
+function PaymentProof({ r }: { r: TemplateRequest }) {
+  const p = r.payment!;
+  const [img, setImg] = useState<{ id: string; url: string | null; error?: string } | null>(null);
+  const [zoom, setZoom] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const copy = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      // The reference stays selectable on screen.
+    }
+  };
+  const mismatch = Math.round(p.amountPaid) !== Math.round(r.price);
+  useEffect(() => {
+    if (!p.proofPath) return;
+    let live = true;
+    void getPaymentProof(r.id).then((res) => live && setImg({ id: `${r.id}:${p.proofPath}`, url: res.ok ? res.data.dataUrl : null, error: res.ok ? undefined : res.error }));
+    return () => {
+      live = false;
+    };
+  }, [r.id, p.proofPath]);
+  const current = img?.id === `${r.id}:${p.proofPath}` ? img : null;
+
+  return (
+    <section aria-labelledby="proof-h" className="flex flex-col gap-3 rounded-xl border border-studio-line p-3">
+      <h3 id="proof-h" className="text-sm font-semibold">
+        Payment proof{p.attempt && p.attempt > 1 ? ` (attempt ${p.attempt})` : ""}
+      </h3>
+      <div className="grid grid-cols-[112px_1fr] gap-3">
+        <button
+          type="button"
+          disabled={!current?.url}
+          onClick={() => setZoom(true)}
+          aria-label="Open the receipt full size"
+          className="group relative flex h-[150px] cursor-zoom-in items-center justify-center overflow-hidden rounded-lg bg-studio-sunken disabled:cursor-default"
+        >
+          {current?.url ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- a data: URL from an admin-only Function */}
+              <img src={current.url} alt="" className="size-full object-cover object-top" />
+              <span aria-hidden className="absolute right-1.5 bottom-1.5 inline-flex size-7 items-center justify-center rounded-md bg-black/60 text-white">
+                <Expand className="size-3.5" />
+              </span>
+            </>
+          ) : !p.proofPath ? (
+            <span className="px-2 text-center text-2xs text-studio-ink-3">Receipt deleted after a year</span>
+          ) : current?.error ? (
+            <span className="px-2 text-center text-2xs text-studio-danger-ink">{current.error}</span>
+          ) : (
+            <LoaderCircle aria-label="Loading the receipt" className="size-5 animate-spin text-studio-ink-3" />
+          )}
+        </button>
+        <dl className="grid content-start grid-cols-[auto_1fr] gap-x-3 gap-y-2 text-sm">
+          <dt className="text-studio-ink-3">Reference</dt>
+          <dd className="flex min-w-0 items-center gap-1">
+            <span className="truncate font-mono tracking-wide">{p.referenceNo}</span>
+            <Button size="sm" variant="ghost" className="-my-2 h-11 shrink-0 px-2" aria-label={copied ? "Reference copied" : "Copy the reference number"} icon={copied ? <Check aria-hidden className="size-4" /> : <Copy aria-hidden className="size-4" />} onClick={() => void copy(p.referenceNo)} />
+          </dd>
+          <dt className="text-studio-ink-3">Paid</dt>
+          <dd className="flex flex-col gap-1">
+            <span className="font-semibold tabular-nums">{formatPeso(p.amountPaid)}</span>
+            {mismatch ? (
+              <span className="inline-flex w-fit items-center gap-1 rounded-md bg-studio-warn-soft px-1.5 py-0.5 text-2xs font-semibold text-studio-warn-ink">
+                <TriangleAlert aria-hidden className="size-3" /> Price is {formatPeso(r.price)}
+              </span>
+            ) : (
+              <span className="text-2xs text-studio-success">Matches the price</span>
+            )}
+          </dd>
+          <dt className="text-studio-ink-3">Paid on</dt>
+          <dd>{formatDate(p.paidAt)}</dd>
+          <dt className="text-studio-ink-3">Sent</dt>
+          <dd>{formatRelative(p.submittedAt)}</dd>
+        </dl>
+      </div>
+      {p.reviewNote && (
+        <p className="rounded-lg bg-studio-raised px-3 py-2 text-2xs text-studio-ink-2">
+          <span className="font-semibold">Your last note: </span>“{p.reviewNote}”
+        </p>
+      )}
+      {current?.url && <ReceiptViewer open={zoom} onOpenChange={setZoom} src={current.url} reference={p.referenceNo} />}
+    </section>
+  );
+}
+
+/** The receipt full screen: fitted, or at its own size to read small print (scrolls). */
+function ReceiptViewer({ open, onOpenChange, src, reference }: { open: boolean; onOpenChange: (v: boolean) => void; src: string; reference: string }) {
+  const [actual, setActual] = useState(false);
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="full"
+      title={`Receipt · ref #${reference}`}
+      footer={
+        <>
+          <Button onClick={() => setActual((v) => !v)}>{actual ? "Fit to screen" : "Actual size"}</Button>
+          <Button variant="primary" onClick={() => onOpenChange(false)}>
+            Done
+          </Button>
+        </>
+      }
+    >
+      <div className={cn("flex min-h-[60vh] justify-center overflow-auto rounded-xl bg-studio-sunken p-3", actual ? "items-start" : "items-center")}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- a data: URL from an admin-only Function */}
+        <img src={src} alt={`Receipt for reference ${reference}`} className={actual ? "max-w-none" : "max-h-[70vh] w-auto max-w-full object-contain"} />
+      </div>
+    </Dialog>
+  );
+}
+
+function ApproveDialog({ open, onOpenChange, r, name, who, onConfirm }: { open: boolean; onOpenChange: (v: boolean) => void; r: TemplateRequest; name: string; who: string; onConfirm: () => Promise<unknown> }) {
+  const [busy, setBusy] = useState(false);
+  const p = r.payment;
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      size="sm"
+      title={`Approve ${name}?`}
+      description={`Unlock ${name} for ${who} and apply it to their card. ${formatPeso(r.price)}${p ? `, ref #${p.referenceNo}` : ""}.`}
+      footer={
+        <>
+          <Button onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button
+            variant="primary"
+            loading={busy}
+            icon={<CircleCheck aria-hidden className="size-4" />}
+            onClick={async () => {
+              setBusy(true);
+              await onConfirm();
+              setBusy(false);
+            }}
+          >
+            Approve & apply
+          </Button>
+        </>
+      }
+    >
+      {p && Math.round(p.amountPaid) !== Math.round(r.price) ? (
+        <p className="flex gap-2 rounded-lg bg-studio-warn-soft px-3 py-2 text-sm text-studio-warn-ink">
+          <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0" />
+          They paid {formatPeso(p.amountPaid)}, not {formatPeso(r.price)}. Approve only if you’ve settled the difference.
+        </p>
+      ) : (
+        <p className="text-sm text-studio-ink-2">The client is notified, and their live card shows {name} right away. You can undo this for a few seconds.</p>
+      )}
+    </Dialog>
   );
 }
 
@@ -585,8 +823,9 @@ function Detail({ term, children }: { term: string; children: ReactNode }) {
 function history(r: TemplateRequest): { label: string; at: string }[] {
   const out = [{ label: r.byAdmin ? "Unlocked by you while creating the card" : "Requested by the client", at: r.requestedAt }];
   if (r.paymentRequestedAt) out.push({ label: "Payment details sent", at: r.paymentRequestedAt });
+  if (r.payment?.submittedAt) out.push({ label: r.status === "payment_rejected" ? "Payment submitted, then rejected" : "Payment submitted", at: r.payment.submittedAt });
   if (r.resolvedAt) {
-    const label = { paid: "Marked paid, template unlocked", approved: "Approved free, template unlocked", declined: "Declined", cancelled: "Cancelled by the client", pending: "", awaiting_payment: "" }[r.status] || REQUEST_CHIP[r.status].label;
+    const label: string = ({ paid: "Marked paid, template unlocked", approved: r.payment ? "Payment approved, template unlocked and applied" : "Approved free, template unlocked", declined: "Declined", cancelled: "Cancelled by the client" } as Partial<Record<TemplateRequestStatus, string>>)[r.status] || REQUEST_CHIP[r.status].label;
     out.push({ label, at: r.resolvedAt });
   }
   return out.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));

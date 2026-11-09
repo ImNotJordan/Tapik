@@ -1,7 +1,8 @@
 "use client";
 
-import { ArrowRight, Check, CircleCheck, Lock } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { ArrowRight, Check, CircleCheck, Clock, LoaderCircle, Lock } from "lucide-react";
+import { useId, useMemo, useState, type ReactNode } from "react";
+import { NEEDS_PAYMENT } from "@/lib/entitlements";
 import { useIsDesktop } from "@/lib/hooks";
 import { WORKSPACE } from "@/lib/mock/workspace";
 import { formatPeso } from "@/lib/pricing";
@@ -13,9 +14,12 @@ import { Button } from "@/components/ui/button";
 import { AdaptiveDialog } from "@/components/ui/dialog";
 import { Field, Textarea } from "@/components/ui/field";
 import { StatusChip } from "@/components/ui/status-chip";
+import { PaymentStep } from "./payment-step";
 import { TemplateThumbnail } from "./template-thumbnail";
 
 type Result = { ok: true } | { ok: false; error: string };
+/** A request was made: with QR payments it opens at "pending_payment" and the sheet moves to the payment step. */
+type Requested = { ok: true; status?: TemplateRequest["status"] } | { ok: false; error: string };
 
 export type PaywallProps = {
   open: boolean;
@@ -31,7 +35,9 @@ export type PaywallProps = {
   defaultName: string;
   /** An open request for this template: the sheet shows its status instead of the offer. */
   request?: TemplateRequest;
-  onRequest: (note: string) => Promise<Result>;
+  onRequest: (note: string) => Promise<Requested>;
+  /** The signed-in client (their receipt uploads go to their own folder). */
+  clientId?: string;
   onCancelRequest: () => Promise<Result>;
   /** "Keep current template": also ends the preview (closing with X keeps previewing). */
   onKeep?: () => void;
@@ -42,17 +48,50 @@ export type PaywallProps = {
 /**
  * "Unlock [template]". A calm offer, not a pitch: the price, what it includes,
  * the card now and in this template, an optional note, and two equal ways out.
- * No payment happens here; the admin's business follows up.
+ * With QR payments on, requesting moves straight to the payment step (the InstaPay
+ * QR and "I've paid"); the sheet can close and reopen at the same step later.
  */
 export function PaywallSheet(props: PaywallProps) {
   const desktop = useIsDesktop();
-  const { open, onOpenChange, templateId, request, inline } = props;
+  const { open, onOpenChange, templateId, request, inline, clientId } = props;
   // Mounted per template (key), so the success state lives until it closes.
-  const [phase, setPhase] = useState<"offer" | "sent">("offer");
+  const [phase, setPhase] = useState<"offer" | "sent" | "paying" | "submitted">("offer");
   const name = getTemplate(templateId).name;
+  const paying = !!request && !!clientId && NEEDS_PAYMENT.includes(request.status) && phase !== "submitted";
+  const verifying = phase === "submitted" || request?.status === "payment_submitted";
 
-  const title = phase === "sent" ? "Request sent" : request ? `${name} is requested` : `Unlock ${name}`;
-  const body = phase === "sent" ? <Sent name={name} onDone={() => onOpenChange(false)} /> : request ? <Status {...props} name={name} request={request} /> : <Offer {...props} name={name} onSent={() => setPhase("sent")} />;
+  const title =
+    phase === "sent" ? "Request sent"
+    : verifying ? "Verifying your payment"
+    : paying ? (request!.status === "payment_rejected" ? `Check your payment for ${name}` : `Pay for ${name}`)
+    : phase === "paying" ? `Pay for ${name}`
+    : request ? `${name} is requested`
+    : `Unlock ${name}`;
+  let body: ReactNode;
+  if (phase === "sent") body = <Sent name={name} onDone={() => onOpenChange(false)} />;
+  else if (verifying) body = <Verifying name={name} request={request} onDone={() => onOpenChange(false)} />;
+  else if (paying) {
+    body = (
+      <PaymentStep
+        request={request!}
+        clientId={clientId!}
+        name={name}
+        preview={<Mini label={name} bundle={props.bundle} templateId={templateId} themeId={request!.themeId ?? props.themeId} small />}
+        onCancelRequest={async () => {
+          const r = await props.onCancelRequest();
+          if (r.ok) onOpenChange(false);
+          return r;
+        }}
+        onSubmitted={() => setPhase("submitted")}
+      />
+    );
+  } else if (phase === "paying") {
+    body = (
+      <p role="status" className="flex items-center gap-2 py-8 text-sm text-studio-ink-2">
+        <LoaderCircle aria-hidden className="size-4 animate-spin" /> Getting the payment details ready…
+      </p>
+    );
+  } else body = request ? <Status {...props} name={name} request={request} /> : <Offer {...props} name={name} onSent={(status) => setPhase(status === "pending_payment" ? "paying" : "sent")} />;
 
   if (inline) {
     return (
@@ -69,7 +108,7 @@ export function PaywallSheet(props: PaywallProps) {
   );
 }
 
-function Offer({ name, templateId, pricing, themeId, bundle, defaultName, onRequest, onOpenChange, onKeep, onSent }: PaywallProps & { name: string; onSent: () => void }) {
+function Offer({ name, templateId, pricing, themeId, bundle, defaultName, onRequest, onOpenChange, onKeep, onSent }: PaywallProps & { name: string; onSent: (status?: TemplateRequest["status"]) => void }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,7 +121,7 @@ function Offer({ name, templateId, pricing, themeId, bundle, defaultName, onRequ
     setError(null);
     const res = await onRequest(note);
     setBusy(false);
-    if (res.ok) onSent();
+    if (res.ok) onSent(res.status);
     else setError(res.error);
   };
 
@@ -93,7 +132,7 @@ function Offer({ name, templateId, pricing, themeId, bundle, defaultName, onRequ
           <p id={priceId} className="text-[2rem] leading-none font-semibold tracking-[-0.02em] tabular-nums">
             {formatPeso(pricing.price ?? 0)}
           </p>
-          <p className="text-sm text-studio-ink-3">One-time unlock for this card. Nothing is charged here.</p>
+          <p className="text-sm text-studio-ink-3">One-time unlock for this card.</p>
         </div>
         <span className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full bg-studio-raised px-2.5 text-2xs font-semibold text-studio-ink-2">
           <Lock aria-hidden className="size-3" strokeWidth={2.5} />
@@ -108,7 +147,7 @@ function Offer({ name, templateId, pricing, themeId, bundle, defaultName, onRequ
           `The ${name} layout, with your own content`,
           `All ${tpl.themes.length} of its color themes, free to switch`,
           `Switch back to ${defaultName} any time`,
-          `${WORKSPACE.shortName} contacts you about payment: GCash, Maya or bank transfer`,
+          `Pay by InstaPay with GCash, Maya or any bank app. ${name} goes on your card once ${WORKSPACE.shortName} confirms it`,
         ].map((t) => (
           <li key={t} className="flex gap-2.5">
             <Check aria-hidden className="mt-0.5 size-4 shrink-0 text-studio-success" strokeWidth={2.5} />
@@ -157,11 +196,20 @@ function BeforeAfter({ bundle, templateId, themeId, currentName, name }: { bundl
   );
 }
 
-function Mini({ label, bundle, highlight }: { label: string; bundle: CardBundle; highlight?: boolean }) {
+function Mini({ label, bundle, highlight, templateId, themeId, small }: { label: string; bundle: CardBundle; highlight?: boolean; templateId?: string; themeId?: string; small?: boolean }) {
+  // `templateId`: the card shown in that template (the payment step's header).
+  const shown = useMemo(() => (templateId ? withLook(bundle, lookFor(getTemplate(templateId), themeId)) : bundle), [bundle, templateId, themeId]);
+  if (small) {
+    return (
+      <div aria-hidden className="overflow-hidden rounded-[10px] border border-studio-line">
+        <TemplateThumbnail bundle={shown} width={390} height={640} scale={0.16} eager />
+      </div>
+    );
+  }
   return (
     <figure className="flex flex-col items-center gap-2">
       <div className={cn("overflow-hidden rounded-[14px] border-2", highlight ? "border-studio-action" : "border-studio-line")}>
-        <TemplateThumbnail bundle={bundle} width={390} height={640} scale={0.3} eager />
+        <TemplateThumbnail bundle={shown} width={390} height={640} scale={0.3} eager />
       </div>
       <figcaption className={cn("text-center text-2xs", highlight ? "font-semibold text-studio-ink" : "text-studio-ink-3")}>{label}</figcaption>
     </figure>
@@ -180,6 +228,37 @@ function Sent({ name, onDone }: { name: string; onDone: () => void }) {
           </p>
         </div>
       </div>
+      <Button size="lg" variant="primary" onClick={onDone} autoFocus className="w-full sm:w-auto">
+        Done
+      </Button>
+    </div>
+  );
+}
+
+/** A payment is in: the studio verifies it. No cancelling from here (it may already be with the bank). */
+function Verifying({ name, request, onDone }: { name: string; request?: TemplateRequest; onDone: () => void }) {
+  const p = request?.payment;
+  return (
+    <div className="flex flex-col items-start gap-5">
+      <div role="status" className="flex gap-3">
+        <Clock aria-hidden className="mt-0.5 size-6 shrink-0 text-studio-info-ink" strokeWidth={2} />
+        <div className="flex flex-col gap-1">
+          <p className="text-base font-semibold">Payment submitted. We’ll verify it shortly.</p>
+          <p className="text-sm text-studio-ink-2">
+            {WORKSPACE.shortName} checks the transfer, then puts {name} on your card. You’ll get a notification and an email. Your card stays as it is until then.
+          </p>
+        </div>
+      </div>
+      {p && (
+        <dl className="grid w-full grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-xl bg-studio-raised px-4 py-3 text-sm">
+          <dt className="text-studio-ink-3">Reference</dt>
+          <dd className="font-mono tracking-wide">{p.referenceNo}</dd>
+          <dt className="text-studio-ink-3">Amount</dt>
+          <dd className="tabular-nums">{formatPeso(p.amountPaid)}</dd>
+          <dt className="text-studio-ink-3">Submitted</dt>
+          <dd>{formatRelative(p.submittedAt)}</dd>
+        </dl>
+      )}
       <Button size="lg" variant="primary" onClick={onDone} autoFocus className="w-full sm:w-auto">
         Done
       </Button>

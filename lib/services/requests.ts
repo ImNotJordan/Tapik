@@ -1,17 +1,17 @@
 /**
  * Template requests and client notifications.
- * Mock mode: the local store. Firebase mode: Functions (functions/src/requests.ts)
- * write requests, unlocks and notifications; the listeners bring them back here,
- * so the studio sees a client's request the moment it's made.
+ * Mock mode: the local store (manual payment flow). Firebase mode: Functions
+ * (functions/src/requests.ts) write requests, unlocks, the card's new look and
+ * notifications; the listeners bring them back here.
  */
 import * as portal from "@/lib/store/portal";
 import type { AdminResult } from "@/lib/store/portal";
-import type { TemplateRequest } from "@/lib/types";
+import type { TemplateRequestStatus } from "@/lib/types";
 import { isFirebaseMode } from "./mode";
 import type { Result } from "./types";
 
 export {
-  markAllRead, openRequests, paymentEmail, pendingRequestCount,
+  markAllRead, openRequests, paymentEmail, paymentsToVerify, pendingRequestCount,
   requestTemplateName, requestThemeName, requestsForCard, type AdminResult,
 } from "@/lib/store/portal";
 
@@ -20,9 +20,22 @@ async function call<O>(name: string, data: unknown): Promise<Result<O>> {
   return call<O>(name, data);
 }
 
-export async function requestTemplate(cardId: string, templateId: string, themeId: string | undefined, note: string): Promise<Result<TemplateRequest>> {
-  if (!isFirebaseMode) return portal.requestTemplate(cardId, templateId, themeId, note);
-  return call<TemplateRequest>("requestTemplate", { cardId, templateId, themeId, note: note.trim() || undefined });
+/** The live card changed (an approval applied a template, or Undo put it back): refresh its public page now. */
+async function refresh(slug: string | null | undefined) {
+  if (!slug) return;
+  const { refreshPublicPages } = await import("./cards");
+  await refreshPublicPages([slug]);
+}
+
+export type Requested = { requestId: string; status: TemplateRequestStatus; created: boolean };
+
+/** Ask for a paid template. With QR payments on, it opens straight at "Payment needed"; a second ask returns the open request. */
+export async function requestTemplate(cardId: string, templateId: string, themeId: string | undefined, note: string): Promise<Result<Requested>> {
+  if (!isFirebaseMode) {
+    const r = await portal.requestTemplate(cardId, templateId, themeId, note);
+    return r.ok ? { ok: true, data: { requestId: r.data.id, status: r.data.status, created: true } } : r;
+  }
+  return call<Requested>("requestTemplate", { cardId, templateId, themeId, note: note.trim() || undefined });
 }
 
 export async function cancelRequest(requestId: string): Promise<Result> {
@@ -31,11 +44,32 @@ export async function cancelRequest(requestId: string): Promise<Result> {
   return r.ok ? { ok: true, data: undefined } : r;
 }
 
-/** An admin action, with an Undo that puts the request, the unlock and the client's notification back. */
+/** An admin action, with an Undo that puts the request, the card's look, the unlock and the client's notification back. */
 async function adminAction(name: string, data: { requestId: string } & Record<string, unknown>): Promise<AdminResult> {
-  const r = await call<unknown>(name, data);
+  const r = await call<{ slug?: string | null }>(name, data);
   if (!r.ok) return r;
-  return { ok: true, data: { undo: () => void call("undoTemplateRequestAction", { requestId: data.requestId }) } };
+  await refresh(r.data?.slug);
+  return {
+    ok: true,
+    data: {
+      undo: () =>
+        void call<{ slug?: string | null }>("undoTemplateRequestAction", { requestId: data.requestId }).then(async (u) => {
+          if (u.ok) await refresh(u.data?.slug);
+        }),
+    },
+  };
+}
+
+/** Approve a payment (or, with a reason, approve without one): unlocks the template and applies it to the client's card. */
+export async function approveRequest(requestId: string, expectedStatus: "payment_submitted" | "pending_payment" | "payment_rejected", reason?: string): Promise<AdminResult> {
+  if (!isFirebaseMode) return portal.compRequest(requestId, reason ?? "Payment verified.");
+  return adminAction("approveTemplateRequest", { requestId, expectedStatus, reason: reason?.trim() || undefined });
+}
+
+/** The payment couldn't be confirmed: the client sees the note and can submit again. */
+export async function rejectPayment(requestId: string, note: string): Promise<AdminResult> {
+  if (!isFirebaseMode) return { ok: false, error: "QR payments work with the Firebase backend only." };
+  return adminAction("rejectTemplatePayment", { requestId, note });
 }
 
 export async function sendPaymentDetailsFor(requestId: string, subject: string, body: string): Promise<AdminResult> {

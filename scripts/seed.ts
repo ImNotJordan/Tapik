@@ -11,6 +11,8 @@
  * Real-project runs create no users: use scripts/make-admin.ts, and clients join through invites.
  */
 import { createHash } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { getStorage } from "firebase-admin/storage";
 import { applicationDefault, cert, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
@@ -19,8 +21,9 @@ import { WORKSPACE } from "@/lib/mock/workspace";
 import { COL, SETTINGS, encode } from "@/lib/firebase/model";
 import { EMULATOR_HOSTS, EMULATOR_PROJECT_ID } from "@/lib/firebase/config";
 import * as S from "@/lib/schemas";
+import { OPEN_REQUEST } from "@/lib/entitlements";
 import { TEMPLATE_PREVIEWS } from "@/templates/previews";
-import type { CardBundle } from "@/lib/types";
+import type { CardBundle, TemplateRequest } from "@/lib/types";
 
 /** The real Tapik Studio admins, mirrored in the emulators so local sign-in matches production. */
 const OWNER_ADMINS = [{ uid: "admin_jordan", email: "amilasan_jordan@hyacinthindustriesllc.com", name: "Jordan Amilasan" }];
@@ -48,6 +51,47 @@ if (real && project !== "tapik-ph") {
 if (!real) {
   process.env.FIRESTORE_EMULATOR_HOST = `${EMULATOR_HOSTS.firestore.host}:${EMULATOR_HOSTS.firestore.port}`;
   process.env.FIREBASE_AUTH_EMULATOR_HOST = EMULATOR_HOSTS.auth;
+  process.env.FIREBASE_STORAGE_EMULATOR_HOST = `${EMULATOR_HOSTS.storage.host}:${EMULATOR_HOSTS.storage.port}`;
+}
+
+/** Card media bucket (functions/src/requests.ts MEDIA_BUCKET). */
+const MEDIA_BUCKET = "tapik-ph-media";
+const QR_PATH = "settings/payment/gotyme-qr.jpg";
+
+/** A plain placeholder receipt for the sample payments (never a real transaction). */
+function sampleReceipt(ref: string, amount: number): Buffer {
+  return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="1000" viewBox="0 0 600 1000">
+  <rect width="600" height="1000" fill="#f4f6f8"/><rect x="40" y="60" width="520" height="880" rx="28" fill="#fff"/>
+  <text x="300" y="170" text-anchor="middle" font-family="Arial" font-size="30" font-weight="700" fill="#1d2220">Sample receipt</text>
+  <text x="300" y="215" text-anchor="middle" font-family="Arial" font-size="20" fill="#5f6662">Not a real payment (seed data)</text>
+  <text x="300" y="380" text-anchor="middle" font-family="Arial" font-size="64" font-weight="700" fill="#1d2220">PHP ${amount.toFixed(2)}</text>
+  <text x="300" y="470" text-anchor="middle" font-family="Arial" font-size="22" fill="#5f6662">InstaPay transfer</text>
+  <text x="300" y="560" text-anchor="middle" font-family="Courier New" font-size="26" fill="#1d2220">Ref. ${ref}</text>
+</svg>`);
+}
+
+/**
+ * QR payments are on in seeded projects, so the sample requests use the new statuses
+ * (the same migration production gets: pending / awaiting_payment → pending_payment),
+ * plus one payment to verify and one rejected, with placeholder receipts.
+ */
+function qrRequests(rs: TemplateRequest[], ago: (h: number) => string): TemplateRequest[] {
+  return rs.map((r) => {
+    if (r.id === "tr_7") {
+      return { ...r, status: "payment_submitted", payment: { referenceNo: "GT8842017735", amountPaid: r.price, paidAt: ago(8), proofPath: `paymentProofs/${r.clientId}/${r.id}/sample.svg`, submittedAt: ago(7.5), attempt: 1 } };
+    }
+    if (r.id === "tr_8") {
+      return {
+        ...r,
+        status: "payment_rejected",
+        payment: {
+          referenceNo: "GT5512093318", amountPaid: 450, paidAt: ago(20), proofPath: `paymentProofs/${r.clientId}/${r.id}/sample.svg`, submittedAt: ago(19), attempt: 1,
+          reviewNote: `The transfer was ₱450, but Event / Promo is ₱${r.price}. Please send the ₱${r.price - 450} difference and submit both receipts.`,
+        },
+      };
+    }
+    return r.status === "pending" || r.status === "awaiting_payment" ? { ...r, status: "pending_payment" } : r;
+  });
 }
 
 function credential() {
@@ -149,7 +193,27 @@ async function main() {
     const stored = { ...inv, tokenHash: sha256(token) };
     set(`${COL.invites}/${inv.id}`, encode(check(S.invite, stored, `invite ${inv.id}`)));
   }
-  for (const r of mock.templateRequests) set(`${COL.templateRequests}/${r.id}`, encode(check(S.templateRequest, r, `request ${r.id}`)));
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const requests = qrRequests(mock.templateRequests, hoursAgo);
+  for (const r of requests) {
+    set(`${COL.templateRequests}/${r.id}`, { ...encode(check(S.templateRequest, r, `request ${r.id}`)), amountMismatch: r.payment ? Math.round(r.payment.amountPaid) !== Math.round(r.price) : false });
+    // One open request per card and template (functions/src/requests.ts).
+    if (OPEN_REQUEST.includes(r.status)) set(`${COL.templateRequestLocks}/${r.cardId}__${r.templateId}`, { requestId: r.id, createdAt: new Date() });
+  }
+  // QR payments: settings, the QR (scripts/seed-assets, kept out of git) and the sample receipts in Storage.
+  const qrFile = `${process.cwd()}/scripts/seed-assets/gotyme-qr.jpg`;
+  const hasQr = existsSync(qrFile);
+  if (!hasQr) console.warn("No QR at scripts/seed-assets/gotyme-qr.jpg: QR payments stay off. Put the GoTyme QR there (it's git-ignored) and seed again.");
+  set(`${COL.settings}/${SETTINGS.payment}`, {
+    enabled: hasQr, ...(hasQr ? { qrStoragePath: QR_PATH } : {}), channelLabel: "GoTyme Bank · InstaPay", accountName: "JORDAN AMILASAN", accountLast4: "2311",
+    instructions: "Open your bank or e-wallet app, choose InstaPay or Scan QR, and scan or upload this QR code. Pay the exact amount shown.",
+    updatedAt: new Date(), updatedBy: "seed",
+  });
+  const bucket = getStorage(app).bucket(MEDIA_BUCKET);
+  if (hasQr) await bucket.file(QR_PATH).save(readFileSync(qrFile), { contentType: "image/jpeg" });
+  for (const r of requests) {
+    if (r.payment?.proofPath) await bucket.file(r.payment.proofPath).save(sampleReceipt(r.payment.referenceNo, r.payment.amountPaid), { contentType: "image/svg+xml" });
+  }
   for (const e of mock.entitlements) set(`${COL.entitlements}/${e.cardId}`, { unlockedTemplateIds: e.unlockedTemplateIds, updatedAt: new Date() });
   for (const n of mock.notifications) set(`${COL.notifications}/${n.id}`, encode(check(S.notification, n, `notification ${n.id}`)));
 

@@ -150,15 +150,36 @@ export const invite = z.object({
 export const templateRequest = z.object({
   id, clientId: id, cardId: id, templateId: text(64), themeId: text(64).optional(),
   price: z.number().min(0), currency: z.literal("PHP"), note: text(500).optional(),
-  status: z.enum(["pending", "awaiting_payment", "paid", "approved", "declined", "cancelled"]),
+  status: z.enum(["pending_payment", "payment_submitted", "payment_rejected", "pending", "awaiting_payment", "paid", "approved", "declined", "cancelled"]),
   requestedAt: isoDate, resolvedAt: isoDate.optional(), adminNote: text(1000).optional(),
   paidAmount: z.number().min(0).optional(), paymentRef: text(120).optional(), compReason: text(500).optional(),
   paymentRequestedAt: isoDate.optional(), byAdmin: z.boolean().optional(),
+  payment: z.object({
+    referenceNo: text(30), amountPaid: z.number().min(0), paidAt: isoDate, proofPath: z.string().max(512).nullable(),
+    submittedAt: isoDate, reviewNote: text(1000).optional(), attempt: z.number().int().min(1).optional(),
+  }).optional(),
+  approvedWithoutProof: text(500).optional(), approvedAt: isoDate.optional(), updatedAt: isoDate.optional(),
+});
+
+/** What a client submits after paying by QR (submitTemplatePayment). The price is never part of it. */
+export const paymentSubmission = z.object({
+  referenceNo: z.string().trim().regex(/^[A-Za-z0-9]{6,30}$/, "Use the reference number from your receipt: 6 to 30 letters and numbers, no spaces."),
+  amountPaid: z.number().min(1, "Enter the amount you sent.").max(1_000_000),
+  paidAt: isoDate,
+});
+
+/** settings/payment as the admin edits it (Payment settings). */
+export const paymentSettings = z.object({
+  enabled: z.boolean(),
+  channelLabel: text(60).min(1),
+  accountName: text(80).min(1),
+  accountLast4: z.string().regex(/^\d{4}$/, "Enter the last 4 digits only."),
+  instructions: text(600),
 });
 
 export const notification = z.object({
   id, clientId: id, cardId: id,
-  kind: z.enum(["template_unlocked", "payment_requested", "request_declined", "review_approved", "review_changes"]),
+  kind: z.enum(["template_unlocked", "template_applied", "payment_requested", "payment_rejected", "request_declined", "review_approved", "review_changes"]),
   title: text(200), body: text(1000), at: isoDate, read: z.boolean(), requestId: id.optional(), emailed: z.boolean(),
 });
 

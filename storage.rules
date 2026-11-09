@@ -32,6 +32,21 @@ service firebase.storage {
       );
     }
 
+    // Receipt screenshots for template payments. Only the client creates their own (JPEG/PNG/WebP:
+    // HEIC is converted in the browser), never overwrites or deletes one, and only they and admins
+    // read it. Ownership and the request's status are checked by submitTemplatePayment.
+    match /paymentProofs/{clientId}/{requestId}/{file} {
+      allow read: if isAdmin() || (request.auth != null && request.auth.token.role == 'client' && request.auth.token.clientId == clientId);
+      allow create: if request.auth != null && request.auth.token.role == 'client' && request.auth.token.clientId == clientId
+        && resource == null && isRaster() && underMB(10);
+    }
+
+    // The payment QR: admins only. Clients get it through the getPaymentQr Function, never a public URL.
+    match /settings/payment/{file} {
+      allow read: if isAdmin();
+      allow create: if isAdmin() && isRaster() && underMB(5);
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

@@ -42,7 +42,10 @@ export function canApplyTemplate(role: Role, entitlements: CardEntitlements | un
 /** How a template tile looks to the person picking it. */
 export type TemplateAccess = "free" | "unlocked" | "requested" | "locked";
 
-export const OPEN_REQUEST: TemplateRequest["status"][] = ["pending", "awaiting_payment"];
+/** Still open: one per card and template. */
+export const OPEN_REQUEST: TemplateRequest["status"][] = ["pending_payment", "payment_submitted", "payment_rejected", "pending", "awaiting_payment"];
+/** Waiting for the client to pay (or pay again). They may still cancel only before a payment is submitted. */
+export const NEEDS_PAYMENT: TemplateRequest["status"][] = ["pending_payment", "payment_rejected"];
 
 export function openRequestFor(requests: TemplateRequest[], cardId: string, templateId: TemplateId): TemplateRequest | undefined {
   return requests.find((r) => r.cardId === cardId && r.templateId === templateId && OPEN_REQUEST.includes(r.status));

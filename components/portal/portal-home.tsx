@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check, Copy, ExternalLink, PenLine, Share2 } from "lucide-react";
+import { ArrowRight, Check, Copy, ExternalLink, PenLine, Share2, Sparkles } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useIsDesktop } from "@/lib/hooks";
 import { WORKSPACE } from "@/lib/mock/workspace";
 import { portalCardState } from "@/lib/services/cards";
 import { touchClientActive } from "@/lib/services/clients";
+import { undoTemplateApply } from "@/lib/services/payments";
+import { getTemplate } from "@/templates/registry";
 import { useCardBundle, useDB } from "@/lib/services/data";
 import type { CardBundle, Client } from "@/lib/types";
 import { cn, formatRelative, greetingName, publicCardPath, publicCardUrl } from "@/lib/utils";
@@ -16,6 +18,7 @@ import { AdaptiveDialog } from "@/components/ui/dialog";
 import { DevicePreview } from "@/components/ui/device-preview";
 import { QrPreview } from "@/components/ui/qr-preview";
 import { StatusChip } from "@/components/ui/status-chip";
+import { useToast } from "@/components/ui/toast";
 import { CardRenderer } from "@/components/card/card-renderer";
 import { useCopy } from "@/components/card/actions";
 import { ClientGate, PortalSkeleton } from "./gates";
@@ -88,6 +91,7 @@ function Home({ client }: { client: Client }) {
             {neverLive && <p className="text-sm text-studio-ink-3">Your card goes live {goLiveHow}.</p>}
           </div>
 
+          <AppliedBanner bundle={bundle} />
           <ThemeRequests cardId={card.id} />
           <Checklist bundle={bundle} />
         </div>
@@ -105,6 +109,45 @@ function Home({ client }: { client: Client }) {
 
       <ShareDialog bundle={bundle} open={share} onOpenChange={setShare} neverLive={neverLive} goLiveHow={goLiveHow} />
     </PortalShell>
+  );
+}
+
+/**
+ * Right after the studio approved and applied a requested template: what changed,
+ * with Undo (the previous template comes back; the new one stays unlocked).
+ */
+function AppliedBanner({ bundle }: { bundle: CardBundle }) {
+  const toast = useToast();
+  const [busy, setBusy] = useState(false);
+  const prev = bundle.card.previousLook;
+  // Mentioned for two weeks after it was applied; Undo needs the previous look to exist.
+  const [shownUntil] = useState(() => Date.now() - 14 * 86_400_000);
+  if (!prev || (prev.appliedAt && Date.parse(prev.appliedAt) < shownUntil)) return null;
+  const now = getTemplate(bundle.card.templateId).name;
+  const before = getTemplate(prev.templateId).name;
+  return (
+    <section aria-labelledby="applied-h" className="flex flex-wrap items-center gap-3 rounded-2xl bg-studio-success-soft px-4 py-3 sm:px-5">
+      <Sparkles aria-hidden className="size-5 shrink-0 text-studio-success" />
+      <div className="flex min-w-0 flex-1 basis-48 flex-col gap-0.5">
+        <h2 id="applied-h" className="text-sm font-semibold">
+          {now} is unlocked and applied to your card
+        </h2>
+        <p className="text-2xs text-studio-ink-2">Prefer {before}? Undo puts it back. {now} stays unlocked, so you can switch again any time.</p>
+      </div>
+      <Button
+        size="md"
+        loading={busy}
+        onClick={async () => {
+          setBusy(true);
+          const r = await undoTemplateApply(bundle.card.id);
+          setBusy(false);
+          if (r.ok) toast.success(`Back to ${before}`, { description: `${now} stays unlocked in Design.` });
+          else toast.error("That didn’t go through", { description: r.error });
+        }}
+      >
+        Undo
+      </Button>
+    </section>
   );
 }
 
@@ -126,12 +169,20 @@ function ThemeRequests({ cardId }: { cardId: string }) {
                 <span className="font-semibold tabular-nums">{r.price}</span>
                 {r.themeName && ` · in the ${r.themeName} colors`}
               </p>
-              <p className="text-2xs text-studio-ink-3">Requested {formatRelative(r.requestedAt)}</p>
+              <p className="text-2xs text-studio-ink-3">
+                {r.status === "payment_submitted" && r.paymentSubmittedAt ? `Payment submitted ${formatRelative(r.paymentSubmittedAt)}. We’ll verify it shortly.` : `Requested ${formatRelative(r.requestedAt)}`}
+              </p>
               {r.awaitingPayment && (
                 <p className="text-2xs text-studio-ink-2">Payment details were sent to your email{r.paymentRequestedAt ? ` ${formatRelative(r.paymentRequestedAt)}` : ""}.</p>
               )}
+              {r.reviewNote && <p className="text-2xs text-studio-danger-ink">“{r.reviewNote}”</p>}
             </div>
             <StatusChip kind="request" status={r.status} size="sm" />
+            {(r.status === "pending_payment" || r.status === "payment_rejected") && (
+              <LinkButton href={`/portal/edit?tab=design&request=${r.id}`} variant={r.status === "payment_rejected" ? "secondary" : "primary"} size="md" className="basis-full sm:basis-auto">
+                {r.status === "payment_rejected" ? "Resubmit payment" : "Pay now"}
+              </LinkButton>
+            )}
           </li>
         ))}
       </ul>

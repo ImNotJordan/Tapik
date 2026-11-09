@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BookOpen, Inbox, LayoutGrid, Library, LogOut, Plus, RotateCcw, SlidersHorizontal, Users } from "lucide-react";
+import { BookOpen, Inbox, LayoutGrid, Library, LogOut, Plus, RotateCcw, QrCode, SlidersHorizontal, Users } from "lucide-react";
 import { Suspense, useState, type ReactNode } from "react";
 import { resetDemoData, useDB } from "@/lib/services/data";
 import { pendingRequestCount } from "@/lib/services/requests";
@@ -19,7 +19,8 @@ const NAV = [
   { href: "/admin/clients", label: "Clients", icon: Users, match: (p: string) => p.startsWith("/admin/clients") },
   { href: "/admin/template-requests", label: "Template requests", icon: Inbox, match: (p: string) => p.startsWith("/admin/template-requests"), badge: "requests" as const },
   { href: "/admin/templates", label: "Template library", icon: Library, match: (p: string) => p.startsWith("/admin/templates") || p.startsWith("/admin/library") },
-  { href: "/admin/settings/templates", label: "Templates & pricing", icon: SlidersHorizontal, match: (p: string) => p.startsWith("/admin/settings") },
+  { href: "/admin/settings/templates", label: "Templates & pricing", icon: SlidersHorizontal, match: (p: string) => p.startsWith("/admin/settings") && !p.startsWith("/admin/settings/payment") },
+  { href: "/admin/settings/payment", label: "Payment settings", icon: QrCode, match: (p: string) => p.startsWith("/admin/settings/payment") },
   { href: "/design", label: "Style guide", icon: BookOpen, match: (p: string) => p.startsWith("/design") },
 ];
 

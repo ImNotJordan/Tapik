@@ -31,8 +31,13 @@ export async function ensureCurrentTemplateUnlocked(cardId: string, card: { clie
   if (!card.clientId || !templateId || !hasTemplate(templateId)) return null;
   if (templatePricing(templateId, await pricing()).tier !== "paid") return null;
   const ref = db().collection(COL.entitlements).doc(cardId);
+  const cardRef = db().collection(COL.cards).doc(cardId);
   const comped = await db().runTransaction(async (tx) => {
-    const unlocked = ((await tx.get(ref)).get("unlockedTemplateIds") as string[] | undefined) ?? [];
+    // A late trigger (retry, cold start) must not bring back an unlock that an Undo took away:
+    // decide from the card as it is now, not from the event that fired.
+    const [current, ent] = await Promise.all([tx.get(cardRef), tx.get(ref)]);
+    if (current.get("templateId") !== templateId) return null;
+    const unlocked = (ent.get("unlockedTemplateIds") as string[] | undefined) ?? [];
     if (unlocked.includes(templateId)) return null;
     tx.set(ref, { unlockedTemplateIds: FieldValue.arrayUnion(templateId), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     return templateId;

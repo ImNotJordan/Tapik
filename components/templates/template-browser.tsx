@@ -3,7 +3,7 @@
 import { Check, Lock, Search, Star, X } from "lucide-react";
 import { memo, useMemo, useState, type ReactNode } from "react";
 import { templatePricing, type PricingSettings, type TemplateAccess } from "@/lib/entitlements";
-import type { CardBundle, TemplatePricing } from "@/lib/types";
+import type { CardBundle, TemplatePricing, TemplateRequestStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { CATEGORIES } from "@/templates/registry";
 import { Button } from "@/components/ui/button";
@@ -42,6 +42,8 @@ export type BrowserProps = {
    */
   pricing?: PricingSettings;
   access?: (templateId: string) => TemplateAccess;
+  /** A client's open request on a template, so its tile can say "Payment needed" or "Verifying payment". */
+  requestStatus?: (templateId: string) => TemplateRequestStatus | undefined;
   /** The locked template shown in the preview right now. */
   previewingKey?: string | null;
 };
@@ -64,6 +66,7 @@ export function TemplateBrowser({
   className,
   pricing,
   access,
+  requestStatus,
   previewingKey,
 }: BrowserProps) {
   const [category, setCategory] = useState<CategoryFilter>("All");
@@ -184,6 +187,7 @@ export function TemplateBrowser({
               pricing={pricing && !it.saved ? templatePricing(it.manifest.id, pricing) : undefined}
               state={pricing ? (previewingKey === it.key ? "previewing" : access ? access(it.manifest.id) : templatePricing(it.manifest.id, pricing).tier === "free" ? "free" : "locked") : undefined}
               admin={!access}
+              requestStatus={requestStatus?.(it.manifest.id)}
             />
           ))}
         </ul>
@@ -212,6 +216,7 @@ export const TemplateTile = memo(function TemplateTile({
   pricing,
   state,
   admin,
+  requestStatus,
 }: {
   item: TemplateItem;
   selected: boolean;
@@ -227,10 +232,11 @@ export const TemplateTile = memo(function TemplateTile({
   pricing?: TemplatePricing;
   state?: TileState;
   admin?: boolean;
+  requestStatus?: TemplateRequestStatus;
 }) {
   const bundle = useMemo(() => itemBundle(item, themeId, content), [item, themeId, content]);
   const locked = !admin && (state === "locked" || state === "requested");
-  const label = `${item.name}, ${item.manifest.category}${pricing && state ? `, ${accessLabel(state, pricing, admin)}` : ""}${item.saved ? `, saved from ${item.manifest.name}` : ""}${item.isNew ? ", new" : ""}${current ? ", current template" : ""}${hidden ? ", hidden from clients" : ""}`;
+  const label = `${item.name}, ${item.manifest.category}${pricing && state ? `, ${accessLabel(state, pricing, admin, requestStatus)}` : ""}${item.saved ? `, saved from ${item.manifest.name}` : ""}${item.isNew ? ", new" : ""}${current ? ", current template" : ""}${hidden ? ", hidden from clients" : ""}`;
   return (
     <li className="relative">
       <div
@@ -282,7 +288,7 @@ export const TemplateTile = memo(function TemplateTile({
             {item.isNew && <Badge tone="warn">New</Badge>}
             {item.saved && <Badge>Yours</Badge>}
           </span>
-          {pricing && state && <AccessBadge state={state} pricing={pricing} admin={admin} className="mt-1 self-start" />}
+          {pricing && state && <AccessBadge state={state} pricing={pricing} admin={admin} requestStatus={requestStatus} className="mt-1 self-start" />}
           <span className="text-2xs text-studio-ink-3">
             {item.manifest.category}
             {current && " · Current"}

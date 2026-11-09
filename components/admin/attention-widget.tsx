@@ -1,18 +1,25 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Hourglass, Inbox } from "lucide-react";
+import { ArrowRight, Hourglass, Inbox, Wallet } from "lucide-react";
 import { useDB } from "@/lib/services/data";
-import { openRequests } from "@/lib/services/requests";
+import { openRequests, paymentsToVerify } from "@/lib/services/requests";
 
 /** Dashboard: what clients are waiting on. Hidden when nothing is. */
 export function AttentionWidget() {
   const { db } = useDB();
-  const wanting = new Set(openRequests(db).map((r) => r.clientId)).size;
+  const toVerify = paymentsToVerify(db).length;
+  // Clients still choosing or paying (payments to verify have their own line).
+  const wanting = new Set(openRequests(db).filter((r) => r.status !== "payment_submitted").map((r) => r.clientId)).size;
   const reviews = db.cards.filter((c) => c.clientId && c.review?.status === "pending").length;
-  if (!wanting && !reviews) return null;
+  if (!toVerify && !wanting && !reviews) return null;
   return (
     <section aria-label="Waiting on you" className="flex flex-col divide-y divide-studio-line overflow-hidden rounded-2xl border border-studio-line bg-studio-surface sm:flex-row sm:divide-x sm:divide-y-0">
+      {toVerify > 0 && (
+        <Row href="/admin/template-requests?filter=payment_submitted" icon={<Wallet aria-hidden className="size-[18px]" strokeWidth={1.75} />}>
+          <strong className="font-semibold tabular-nums">{toVerify}</strong> payment{toVerify === 1 ? "" : "s"} to verify
+        </Row>
+      )}
       {wanting > 0 && (
         <Row href="/admin/template-requests" icon={<Inbox aria-hidden className="size-[18px]" strokeWidth={1.75} />}>
           <strong className="font-semibold tabular-nums">{wanting}</strong> client{wanting === 1 ? " wants" : "s want"} a paid template

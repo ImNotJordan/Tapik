@@ -34,9 +34,10 @@ service cloud.firestore {
 
     match /admins/{uid} {
       allow read: if isAdmin();
-      // An admin edits their own favorites; admins are created by scripts/make-admin.ts.
+      // An admin edits their own favorites and email preferences; admins are created by scripts/make-admin.ts.
       allow update: if isAdmin() && request.auth.uid == uid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoriteTemplates', 'updatedAt']);
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['favoriteTemplates', 'notify', 'updatedAt'])
+        && (!('notify' in request.resource.data) || request.resource.data.notify.keys().hasOnly(['templateRequests']));
     }
 
     match /clients/{clientId} {
@@ -143,6 +144,10 @@ service cloud.firestore {
     }
 
     // mail/ is the Trigger Email queue: Functions only. Everything else: denied.
+    // templateRequestLocks/{cardId}__{templateId}: Functions only (falls through to the deny below).
+    // settings/payment: admins read it through the settings match above; it's written only by
+    // the savePaymentSettings Function, so a full account number can never be stored.
+
     match /{document=**} {
       allow read, write: if false;
     }

@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { ArrowRight, Check, CircleAlert, CircleCheck, Eye, Lock } from "lucide-react";
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { bestOn, formatRatio } from "@/lib/design/contrast";
 import { accentGround, contrastChecks, resolveTokens } from "@/lib/design/resolve";
 import { useDB } from "@/lib/services/data";
 import { cancelRequest, requestTemplate, requestTemplateName } from "@/lib/services/requests";
 import { applyThemeOnly, entitlementsFor, pricingOf } from "@/lib/services/templates";
 import { openRequestFor, OPEN_REQUEST, templateAccess, templatePricing } from "@/lib/entitlements";
-import type { ButtonFill, ButtonShape, TemplatePricing, ThemeTokens } from "@/lib/types";
+import type { ButtonFill, ButtonShape, TemplatePricing, TemplateRequestStatus, ThemeTokens } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getTemplate } from "@/templates/registry";
 import { Button } from "@/components/ui/button";
@@ -58,6 +59,17 @@ export function DesignPanel() {
   );
   const defaultName = getTemplate(db.library.defaultTemplateId).name;
   const openForCard = db.templateRequests.filter((r) => r.cardId === card.id && OPEN_REQUEST.includes(r.status));
+  const requestStatusOf = useCallback((templateId: string): TemplateRequestStatus | undefined => openForCard.find((r) => r.templateId === templateId)?.status, [openForCard]);
+
+  // "Pay now" / "Resubmit payment" from the portal home or an email: ?request=<id> opens that request's sheet.
+  const params = useSearchParams();
+  const requestParam = params.get("request");
+  useEffect(() => {
+    if (!isClient || !requestParam) return;
+    const r = db.templateRequests.find((x) => x.id === requestParam && x.cardId === card.id && OPEN_REQUEST.includes(x.status));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- opening the sheet a link points at, once the request has loaded
+    if (r) setPaywall(r.templateId);
+  }, [isClient, requestParam, db.templateRequests, card.id]);
   const accentOnLabel = tpl.accent.on === "primary" ? "buttons and bands" : tpl.accent.on;
 
   // Themes: the card's template, or the locked template being previewed (its themes are previewable too).
@@ -141,6 +153,7 @@ export function DesignPanel() {
               state={templatePreview?.templateId === it.key ? "previewing" : accessOf(it.manifest.id)}
               pricing={templatePricing(it.manifest.id, pricing)}
               admin={!isClient}
+              requestStatus={isClient ? requestStatusOf(it.manifest.id) : undefined}
               onPick={() => pickTemplate(it)}
             />
           ))}
@@ -368,6 +381,7 @@ export function DesignPanel() {
             content={content}
             pricing={pricing}
             access={accessOf}
+            requestStatus={isClient ? requestStatusOf : undefined}
             previewingKey={templatePreview?.templateId}
             onSelect={(key) => {
               const it = strip.find((i) => i.key === key);
@@ -391,13 +405,14 @@ export function DesignPanel() {
           bundle={bundle}
           defaultName={defaultName}
           request={paywallReq}
+          clientId={isClient ? client?.id : undefined}
           onRequest={async (note) => {
             const themeId = templatePreview?.templateId === paywall ? templatePreview.themeId : undefined;
             const res = await requestTemplate(card.id, paywall, themeId, note);
             if (!res.ok) return res;
             // The preview goes back to the saved card as soon as the request is sent.
             setTemplatePreview(null);
-            return { ok: true };
+            return { ok: true, status: res.data.status };
           }}
           onCancelRequest={async () => {
             if (!paywallReq) return { ok: true };
@@ -421,6 +436,7 @@ function StripTile({
   state,
   pricing,
   admin,
+  requestStatus,
   onPick,
 }: {
   item: TemplateItem;
@@ -429,6 +445,7 @@ function StripTile({
   state: TileState;
   pricing: TemplatePricing;
   admin: boolean;
+  requestStatus?: TemplateRequestStatus;
   onPick: () => void;
 }) {
   const b = useMemo(() => itemBundle(item, undefined, content), [item, content]);
@@ -439,7 +456,7 @@ function StripTile({
       <button
         type="button"
         aria-pressed={active}
-        aria-label={`${item.name}, ${active ? "current template" : accessLabel(state, pricing, admin)}`}
+        aria-label={`${item.name}, ${active ? "current template" : accessLabel(state, pricing, admin, requestStatus)}`}
         onClick={() => !active && onPick()}
         className={cn("peer absolute inset-0 z-10 rounded-xl focus-visible:outline-offset-2", active ? "cursor-default" : "cursor-pointer")}
       />
@@ -457,7 +474,7 @@ function StripTile({
             <span className="line-clamp-2">{item.name}</span>
             {active && <Check className="size-3.5 shrink-0 text-studio-action" strokeWidth={2.5} />}
           </span>
-          {!active && <AccessBadge state={state} pricing={pricing} admin={admin} className="h-5 self-start px-1.5 text-[11px]" />}
+          {!active && <AccessBadge state={state} pricing={pricing} admin={admin} requestStatus={requestStatus} className="h-5 self-start px-1.5 text-[11px]" />}
         </span>
       </div>
     </li>

@@ -38,6 +38,9 @@ export const INVITE_CHIP: Record<InviteStatus, Def> = {
 };
 
 export const REQUEST_CHIP: Record<TemplateRequestStatus, Def> = {
+  pending_payment: { label: "Payment needed", icon: Wallet, tone: "warn" },
+  payment_submitted: { label: "Verifying payment", icon: Clock, tone: "info" },
+  payment_rejected: { label: "Payment not accepted", icon: XCircle, tone: "danger" },
   pending: { label: "Pending", icon: CircleDot, tone: "warn" },
   awaiting_payment: { label: "Awaiting payment", icon: Wallet, tone: "info" },
   paid: { label: "Paid", icon: CircleCheck, tone: "success" },

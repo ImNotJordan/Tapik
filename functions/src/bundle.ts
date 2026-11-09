@@ -24,8 +24,8 @@ export async function bundleFor(cardId: string): Promise<CardBundle | null> {
  * hidden socials, storage paths) stay out of the public snapshot.
  */
 export function publicBundle(b: CardBundle, publishedAt: string): CardBundle {
-  const { clientId: _c, permissions: _p, review: _r, ...card } = b.card;
-  void _c; void _p; void _r;
+  const { clientId: _c, permissions: _p, review: _r, previousLook: _l, ...card } = b.card;
+  void _c; void _p; void _r; void _l;
   return {
     card: { ...card, status: "published", published_at: publishedAt },
     socials: b.socials.filter((s) => s.visible),

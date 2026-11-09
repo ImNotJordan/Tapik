@@ -12,6 +12,7 @@
     "lint": "eslint",
     "check:contrast": "tsx scripts/check-contrast.ts",
     "test:guards": "tsx scripts/test-template-guard.ts",
+    "test:payments": "tsx scripts/test-payments.ts",
     "emulators": "node scripts/emulators.mjs",
     "seed": "tsx scripts/seed.ts",
     "make-admin": "tsx scripts/make-admin.ts",

@@ -13,8 +13,10 @@ import { unlockActionFor } from "./request-adapter";
 
 const KIND: Record<ClientNotification["kind"], { icon: LucideIcon; tone: string }> = {
   template_unlocked: { icon: Sparkles, tone: "bg-studio-success-soft text-studio-success" },
+  template_applied: { icon: Sparkles, tone: "bg-studio-success-soft text-studio-success" },
   payment_requested: { icon: Wallet, tone: "bg-studio-info-soft text-studio-info-ink" },
   request_declined: { icon: XCircle, tone: "bg-studio-danger-soft text-studio-danger-ink" },
+  payment_rejected: { icon: Wallet, tone: "bg-studio-danger-soft text-studio-danger-ink" },
   review_approved: { icon: CircleCheck, tone: "bg-studio-success-soft text-studio-success" },
   review_changes: { icon: PenLine, tone: "bg-studio-warn-soft text-studio-warn-ink" },
 };

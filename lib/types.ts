@@ -66,6 +66,19 @@ export type CardEvent = {
   timeLabel?: string;
 };
 
+/** A card's look before a template request was applied (Undo puts it back; the unlock stays). */
+export type PreviousLook = {
+  requestId: string;
+  /** When the requested template was applied (the portal mentions it for two weeks). */
+  appliedAt?: string;
+  templateId: TemplateId;
+  themeId: ThemeId;
+  fontPairingId: string;
+  buttonShape: ButtonShape;
+  buttonFill: ButtonFill;
+  customTokens?: Partial<ThemeTokens>;
+};
+
 /** A small status pill, e.g. "On duty now" (Dispatch) or "Open to projects" (Commit). */
 export type StatusChip = { label: string; tone: "live" | "neutral" };
 
@@ -157,6 +170,8 @@ export type Card = {
   githubUsername?: string;
   /** The chat shown in Prompt's hero. Empty: the cover photo shows instead. */
   promptDemo?: PromptDemo;
+  /** The look before an approved template request applied a new one, so the client can Undo. Functions only. */
+  previousLook?: PreviousLook;
 
   sectionOrder: ReorderableSection[];
   hiddenSections: SectionKey[];
@@ -322,7 +337,55 @@ export type TemplateTier = "free" | "paid";
  */
 export type TemplatePricing = { templateId: TemplateId; tier: TemplateTier; price?: number /* PHP */; isDefault: boolean };
 
-export type TemplateRequestStatus = "pending" | "awaiting_payment" | "paid" | "approved" | "declined" | "cancelled";
+/**
+ * QR payments on (settings/payment.enabled): pending_payment → payment_submitted → approved,
+ * with payment_rejected (resubmit) and declined; cancelled from pending_payment.
+ * Manual flow (QR payments off): pending → awaiting_payment → paid / approved / declined.
+ */
+export type TemplateRequestStatus =
+  | "pending_payment"
+  | "payment_submitted"
+  | "payment_rejected"
+  | "pending"
+  | "awaiting_payment"
+  | "paid"
+  | "approved"
+  | "declined"
+  | "cancelled";
+
+/** What the client submitted as proof of an InstaPay transfer. Prices never come from here. */
+export type RequestPayment = {
+  referenceNo: string;
+  amountPaid: number;
+  /** When the client says they paid (ISO). */
+  paidAt: string;
+  /** Storage path of the receipt screenshot (paymentProofs/{requestId}/…); null once deleted after a year. */
+  proofPath: string | null;
+  submittedAt: string;
+  /** The admin's note when the proof was rejected (shown to the client). */
+  reviewNote?: string;
+  /** 1 for the first submission, 2 after a resubmit, and so on. */
+  attempt?: number;
+};
+
+/** QR payment settings safe for clients (settings/payment minus storage paths and audit fields). */
+export type PaymentSettingsPublic = {
+  enabled: boolean;
+  channelLabel: string;
+  accountName: string;
+  /** Last 4 digits only. A full account number is never stored. */
+  accountLast4: string;
+  instructions: string;
+};
+
+/** settings/payment, admin only. */
+export type PaymentSettings = PaymentSettingsPublic & {
+  qrStoragePath?: string;
+  /** The QR before the last upload, so a bad upload can be undone. */
+  previousQrStoragePath?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+};
 
 export type TemplateRequest = {
   id: string;
@@ -348,6 +411,12 @@ export type TemplateRequest = {
   paymentRequestedAt?: string;
   /** The admin unlocked it while creating the card (no client request). */
   byAdmin?: boolean;
+  /** QR payments: what the client submitted (reference, amount, receipt). */
+  payment?: RequestPayment;
+  /** Approved without a payment proof: the admin's reason. */
+  approvedWithoutProof?: string;
+  approvedAt?: string;
+  updatedAt?: string;
 };
 
 /** Paid templates a card may use. The Default template is always implied. */
@@ -364,7 +433,7 @@ export type CardReview = {
   note?: string;
 };
 
-export type ClientNotificationKind = "template_unlocked" | "payment_requested" | "request_declined" | "review_approved" | "review_changes";
+export type ClientNotificationKind = "template_unlocked" | "template_applied" | "payment_requested" | "payment_rejected" | "request_declined" | "review_approved" | "review_changes";
 
 export type ClientNotification = {
   id: string;

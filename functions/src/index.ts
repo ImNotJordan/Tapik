@@ -20,7 +20,10 @@ export { onPhotoUpload, onPhotoCreated } from "./media";
 export { createClientCard, sendInvite, resendInvite, revokeInvite, getInvite, acceptInvite, expireInvites } from "./invites";
 export { publishCard, unpublishCard, submitForReview, reviewDecision, setTemplateUnlock } from "./publish";
 export {
-  requestTemplate, cancelTemplateRequest, applyTemplateAsClient,
-  sendTemplatePaymentDetails, markTemplateRequestPaid, compTemplateRequest, declineTemplateRequest, undoTemplateRequestAction,
+  requestTemplate, cancelTemplateRequest, applyTemplateAsClient, submitTemplatePayment, getPaymentProof, undoTemplateApply,
+  getPaymentQr, getPaymentSettings, savePaymentSettings,
+  approveTemplateRequest, rejectTemplatePayment, declineTemplateRequest, undoTemplateRequestAction,
+  sendTemplatePaymentDetails, markTemplateRequestPaid, compTemplateRequest, cleanUpPaymentProofs,
 } from "./requests";
+export { onTemplateRequestWrite } from "./request-emails";
 export { sendMail } from "./send-mail";

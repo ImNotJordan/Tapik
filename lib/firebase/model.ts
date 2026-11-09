@@ -38,6 +38,8 @@ export const COL = {
   slugs: "slugs",
   entitlements: "entitlements",
   templateRequests: "templateRequests",
+  /** templateRequestLocks/{cardId}__{templateId} { requestId }: at most one open request per card and template. Functions only. */
+  templateRequestLocks: "templateRequestLocks",
   invites: "invites",
   notifications: "notifications",
   settings: "settings",
@@ -46,7 +48,7 @@ export const COL = {
   nfcBatches: "nfcBatches",
 } as const;
 
-export const SETTINGS = { pricing: "pricing", library: "library", app: "app", private: "private" } as const;
+export const SETTINGS = { pricing: "pricing", library: "library", app: "app", private: "private", payment: "payment" } as const;
 
 /** Card subcollections, in the order a bundle is assembled. */
 export const CARD_SUBCOLLECTIONS = [COL.socials, COL.photos, COL.orgMembers, COL.changeLog] as const;

@@ -23,6 +23,9 @@ export type PortalRequest = {
   awaitingPayment: boolean;
   requestedAt: string;
   paymentRequestedAt?: string;
+  /** QR payments: the studio's note when a payment wasn't accepted. */
+  reviewNote?: string;
+  paymentSubmittedAt?: string;
 };
 
 /** Open template requests (pending or awaiting payment) on a card, newest first. */
@@ -38,12 +41,14 @@ export function openPortalRequests(db: MockDB, cardId: string): PortalRequest[] 
       awaitingPayment: r.status === "awaiting_payment",
       requestedAt: r.requestedAt,
       paymentRequestedAt: r.paymentRequestedAt,
+      reviewNote: r.status === "payment_rejected" ? r.payment?.reviewNote : undefined,
+      paymentSubmittedAt: r.payment?.submittedAt,
     }));
 }
 
 /** Notification kinds that mean "something you asked for is now yours". */
 export function isUnlockNotice(n: ClientNotification): boolean {
-  return n.kind === "template_unlocked";
+  return n.kind === "template_unlocked" || n.kind === "template_applied";
 }
 
 export type ApplyOutcome = { ok: true; name: string; undo: () => void } | { ok: false; error: string };

@@ -58,3 +58,6 @@ functions/node_modules/
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# The payment QR used for seeding: the repo is public and an InstaPay QR encodes the account. Keep it local.
+scripts/seed-assets/

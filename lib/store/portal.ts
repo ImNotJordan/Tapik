@@ -89,9 +89,14 @@ export function openRequests(db: MockDB): TemplateRequest[] {
   return db.templateRequests.filter((r) => OPEN_REQUEST.includes(r.status));
 }
 
-/** Requests waiting on the admin (badge count in the studio nav). */
+/** Requests waiting on the admin (badge count in the studio nav): payments to verify, plus manual-flow requests (QR payments off). */
 export function pendingRequestCount(db: MockDB): number {
-  return db.templateRequests.filter((r) => r.status === "pending").length;
+  return db.templateRequests.filter((r) => r.status === "payment_submitted" || r.status === "pending").length;
+}
+
+/** Payments clients submitted that an admin still has to verify. */
+export function paymentsToVerify(db: MockDB): TemplateRequest[] {
+  return db.templateRequests.filter((r) => r.status === "payment_submitted");
 }
 
 /** Display name of a requested template. */
