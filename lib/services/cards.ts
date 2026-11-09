@@ -60,6 +60,9 @@ export async function submitCardForReview(cardId: string): Promise<Result<{ subm
 /** Approve a client's changes: publishes them and tells the client. */
 export async function approveCardReview(cardId: string): Promise<Result> {
   if (!isFirebaseMode) return portal.approveCardReview(cardId);
+  // A paid template the card hasn't unlocked is unlocked by the admin's approval (a comp).
+  const unlock = await portal.unlockForAdminPublish(cardId);
+  if (!unlock.ok) return unlock;
   const { call } = await import("./callable");
   const r = await call<{ slug: string }>("reviewDecision", { cardId, decision: "approve" });
   if (!r.ok) return r;

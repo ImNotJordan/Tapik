@@ -23,7 +23,7 @@ const base = makePreview(manifest, {
   },
   expertiseChips: ["Claude Code", "Cursor", "Next.js", "Supabase", "Firebase", "Vercel"],
   bookingUrl: "https://tahilabs.ph/sprint",
-  bookingNote: "1-week sprints · fixed scope, fixed price",
+  bookingNote: "1-week sprints · fixed scope and price",
   phone: "+63 917 555 0142",
   messageChannel: "whatsapp",
   email: "kyla@tahilabs.ph",

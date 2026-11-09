@@ -24,6 +24,7 @@ import { saveLibrarySettings } from "@/lib/api";
 import { applyTemplate, createCard, markPublished, patchCard } from "./actions";
 import { logChanges } from "./change-log";
 import { readDB, updateDB } from "./db";
+import { isFirebaseMode } from "@/lib/services/mode";
 
 /*
  * Client Portal and paid-template actions. Each one calls its stub in lib/api.ts
@@ -358,16 +359,48 @@ export function applyTemplateAs(cardId: string, look: TemplateLook, role: Role):
   // Clients never get custom colors; an admin's custom look falls back to the template's own theme.
   const safe: TemplateLook = role === "client" && look.themeId === "custom" ? { ...look, themeId: getTemplate(look.templateId).themes[0].id, customTokens: undefined } : look;
   const comped = role === "admin" && !!card.clientId && templatePricing(look.templateId, pricing).tier === "paid" && !isTemplateUnlocked(ent, look.templateId);
-  if (comped) updateDB((d) => addUnlock(d, cardId, look.templateId));
+  if (comped) {
+    updateDB((d) => addUnlock(d, cardId, look.templateId));
+    // Unlocks live on the server (Firebase mode): record the comp there too.
+    void saveUnlock(cardId, look.templateId, true).then((r) => {
+      if (!r.ok) console.warn(`[templates] ${name} couldn’t be unlocked on the server: ${r.error}. Publishing will try again.`);
+    });
+  }
   const prev = applyTemplate(cardId, safe);
   if (!prev) return { ok: false, error: "This card no longer exists." };
   return { ok: true, data: { prev, comped } };
+}
+
+/** Records an unlock on the server (Firebase mode; admin only). The mock keeps it in the local DB. */
+async function saveUnlock(cardId: string, templateId: string, unlocked: boolean): Promise<Res> {
+  if (!isFirebaseMode) return { ok: true, data: undefined };
+  const { call } = await import("@/lib/services/callable");
+  const r = await call<{ unlockedTemplateIds: string[] }>("setTemplateUnlock", { cardId, templateId, unlocked });
+  return r.ok ? { ok: true, data: undefined } : r;
+}
+
+/**
+ * Before an admin publishes (or approves) a client's card: a paid template the
+ * card hasn't unlocked is unlocked now, as a comp, the same rule as an admin
+ * applying it. Also repairs cards switched before unlocks were saved on the
+ * server. Returns the template it unlocked, if any. Never used for clients.
+ */
+export async function unlockForAdminPublish(cardId: string): Promise<Res<{ comped: string | null }>> {
+  const db = readDB();
+  const card = db.cards.find((c) => c.id === cardId);
+  if (!card?.clientId || canApplyTemplate("client", entitlementsFor(db, cardId), pricingOf(db), card.templateId)) return { ok: true, data: { comped: null } };
+  const name = getTemplate(card.templateId).name;
+  const r = await saveUnlock(cardId, card.templateId, true);
+  if (!r.ok) return { ok: false, error: `Couldn’t unlock ${name} for this card. ${r.error}` };
+  updateDB((d) => addUnlock(d, cardId, card.templateId));
+  return { ok: true, data: { comped: card.templateId } };
 }
 
 /** Undo an apply: the previous look, and the comp unlock if the apply made one. */
 export function undoApply(cardId: string, prev: TemplateLook, compedTemplateId?: string) {
   applyTemplate(cardId, prev);
   if (!compedTemplateId) return;
+  void saveUnlock(cardId, compedTemplateId, false);
   updateDB((d) => ({
     ...d,
     entitlements: d.entitlements.map((e) => (e.cardId === cardId ? { ...e, unlockedTemplateIds: e.unlockedTemplateIds.filter((t) => t !== compedTemplateId) } : e)),
@@ -608,12 +641,9 @@ export async function submitCardForReview(cardId: string): Promise<Res<{ submitt
 
 /** Approve: publish the draft and tell the client. */
 export async function approveCardReview(cardId: string): Promise<Res> {
-  const db = readDB();
-  const card = db.cards.find((c) => c.id === cardId);
-  // Honest locks: never publish a client card on a template it hasn't unlocked.
-  if (card?.clientId && !canApplyTemplate("client", entitlementsFor(db, cardId), pricingOf(db), card.templateId)) {
-    return { ok: false, error: `${getTemplate(card.templateId).name} isn’t unlocked for this card yet.` };
-  }
+  // Honest locks: never publish a client card on a template it hasn't unlocked. The admin's approval unlocks it (a comp).
+  const unlock = await unlockForAdminPublish(cardId);
+  if (!unlock.ok) return unlock;
   const res = await api.approveReview(cardId);
   if (!res.ok) return res;
   const publishedAt = nowISO();

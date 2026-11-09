@@ -6,6 +6,7 @@ import "./setup";
  *   unpublishCard    admin: the link stops resolving immediately
  *   submitForReview  the card's client: asks the studio to review the draft
  *   reviewDecision   admin: approve (publishes) or ask for changes; the client is notified
+ *   setTemplateUnlock admin: unlock a paid template for a client's card (a comp), or take the comp back
  * The browser that published asks the site to refresh the page (/api/revalidate).
  */
 import { randomBytes } from "node:crypto";
@@ -16,7 +17,7 @@ import { BRAND } from "@/lib/brand";
 import { canApplyTemplate, type PricingSettings } from "@/lib/entitlements";
 import { COL, encode } from "@/lib/firebase/model";
 import { id } from "@/lib/schemas";
-import { getTemplate } from "@/templates/registry";
+import { getTemplate, hasTemplate } from "@/templates/registry";
 import { bundleFor, publicBundle } from "./bundle";
 import { caller, parse, requireAdmin, requireClient, type Caller } from "./guards";
 import { enforceAppCheck } from "./params";
@@ -113,4 +114,21 @@ export const reviewDecision = onCall({ enforceAppCheck }, async (req) => {
   await db().collection(COL.cards).doc(cardId).update({ review: { status: "changes_requested", submittedAt, resolvedAt, note }, lastEditedBy: who.uid });
   if (card.clientId) await notifyClient(card.clientId, cardId, "review_changes", "Changes requested", note);
   return { slug: card.slug };
+});
+
+/**
+ * An admin applied a paid template to a client's card: it is unlocked for that card
+ * (a comp), so the card can be published on it and the client can switch back to it.
+ * `unlocked: false` takes it back (Undo right after applying).
+ */
+export const setTemplateUnlock = onCall({ enforceAppCheck }, async (req) => {
+  requireAdmin(req);
+  const { cardId, templateId, unlocked } = parse(z.object({ cardId: id, templateId: z.string().min(1).max(64), unlocked: z.boolean() }), req.data);
+  if (!hasTemplate(templateId)) throw new HttpsError("invalid-argument", "That template doesn't exist.");
+  const card = await loadCard(cardId);
+  if (!card.clientId) return { unlockedTemplateIds: [] as string[] };
+  const ref = db().collection(COL.entitlements).doc(cardId);
+  await ref.set({ unlockedTemplateIds: unlocked ? FieldValue.arrayUnion(templateId) : FieldValue.arrayRemove(templateId), updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+  const after = (await ref.get()).data() as { unlockedTemplateIds?: string[] } | undefined;
+  return { unlockedTemplateIds: after?.unlockedTemplateIds ?? [] };
 });

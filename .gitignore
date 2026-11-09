@@ -37,6 +37,9 @@ yarn-error.log*
 !functions/.env.demo-tapik
 !functions/.env.tapik-ph
 
+# Functions emulator secrets
+functions/.secret.local
+
 # firebase: service account keys, emulator exports, debug logs
 *service-account*.json
 *-firebase-adminsdk-*.json

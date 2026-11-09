@@ -5,6 +5,6 @@
 export { applyTemplate, patchLibrary, removeSavedTemplate, restoreSavedTemplate, saveTemplate, toggleFavoriteTemplate } from "@/lib/store/actions";
 export {
   applyTemplateAs, applyThemeOnly, applyUnlocked, cardsOnDefault, entitlementsFor, pricingOf,
-  savePricing, setDefaultTemplate, undoApply, unlockTemplateNow,
+  savePricing, setDefaultTemplate, undoApply, unlockForAdminPublish, unlockTemplateNow,
 } from "@/lib/store/portal";
 export { importTemplate } from "@/lib/api";
