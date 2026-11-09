@@ -4,7 +4,7 @@ import "./setup";
  *   createCardFromBundle  admin: create a studio card from a full draft (Duplicate). Idempotent on card id.
  *   checkSlug             admin: is this link free?
  *   changeSlug            admin: move a card to a new link; the old link keeps redirecting
- *   onCardWritten         trigger: writes the "who edited what" change log
+ *   onCardWritten         trigger: writes the "who edited what" change log; unlocks a client card's new template
  */
 import { FieldValue, getFirestore, type DocumentData, type Transaction } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -15,6 +15,7 @@ import { COL, encode } from "@/lib/firebase/model";
 import { cardBundle, id, slug as slugSchema } from "@/lib/schemas";
 import type { CardBundle } from "@/lib/types";
 import { parse, requireAdmin } from "./guards";
+import { ensureCurrentTemplateUnlocked } from "./unlocks";
 import { enforceAppCheck } from "./params";
 
 const db = () => getFirestore();
@@ -126,6 +127,10 @@ const keyOf = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 export const onCardWritten = onDocumentUpdated({ document: "cards/{cardId}", retry: true }, async (event) => {
   const before = event.data?.before.data();
   const after = event.data?.after.data();
+  // The studio put a new template on a client's card: unlock it for the card (see unlocks.ts).
+  if (after?.clientId && before?.templateId !== after.templateId) {
+    await ensureCurrentTemplateUnlocked(event.params.cardId, { clientId: after.clientId as string, templateId: after.templateId as string });
+  }
   const uid = after?.lastEditedBy as string | undefined;
   if (!before || !after || !uid) return;
   const changed = Object.keys({ ...before, ...after }).filter((k) => !META.has(k) && !same(before[k], after[k]));

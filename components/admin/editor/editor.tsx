@@ -689,7 +689,7 @@ function TopBar() {
           // Flush a pending autosave first so the published version includes the latest edit.
           if (save.status === "saving" || save.status === "error")
             await retrySave();
-          ops.publish(card);
+          ops.publish(card, { asClient: isClient });
         }}
         icon={
           card.status === "published" && !dirty ? (

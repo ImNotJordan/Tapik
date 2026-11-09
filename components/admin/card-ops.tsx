@@ -3,7 +3,6 @@
 import { Check, Copy, Download } from "lucide-react";
 import { useRef, useState } from "react";
 import { downloadQrCode, duplicateCard, markPublished, markUnpublished, publishCard, unpublishCard } from "@/lib/services/cards";
-import { unlockForAdminPublish } from "@/lib/services/templates";
 import { getTemplate } from "@/templates/registry";
 import type { Card } from "@/lib/types";
 import { publicCardUrl } from "@/lib/utils";
@@ -18,21 +17,19 @@ export function useCardOps() {
   const toast = useToast();
   const [busy, setBusy] = useState<string | null>(null);
 
-  const publish = async (card: Card) => {
-    // Honest locks: a client card never goes live on a template it hasn't unlocked.
-    // The admin publishing it unlocks it for the card (a comp), like applying it does.
+  /**
+   * Publish, for the studio and for clients who may publish directly. Template locks are
+   * enforced where publishing happens (the publishCard Function, or the mock store).
+   * `asClient` hides studio-only details from the client.
+   */
+  const publish = async (card: Card, opts: { asClient?: boolean } = {}) => {
     setBusy(`publish:${card.id}`);
-    const unlock = await unlockForAdminPublish(card.id);
-    if (!unlock.ok) {
-      setBusy(null);
-      return toast.error("Can’t publish on a locked template", { description: unlock.error });
-    }
     const res = await publishCard(card.id);
     setBusy(null);
     if (!res.ok) return toast.error("Couldn’t publish", { description: res.error });
     markPublished(card.id, res.data.publishedAt);
     toast.success(card.status === "published" ? "Changes published" : "Published", {
-      description: `Live at ${publicCardUrl(card.slug).replace(/^https?:\/\//, "")}${unlock.data.comped ? `. ${getTemplate(unlock.data.comped).name} is now unlocked for this card, free.` : ""}`,
+      description: `Live at ${publicCardUrl(card.slug).replace(/^https?:\/\//, "")}${res.data.comped && !opts.asClient ? `. ${getTemplate(res.data.comped).name} is now unlocked for this card, free.` : ""}`,
     });
   };
 

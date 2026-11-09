@@ -14,21 +14,16 @@ import { FieldValue, getFirestore } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { z } from "zod";
 import { BRAND } from "@/lib/brand";
-import { canApplyTemplate, type PricingSettings } from "@/lib/entitlements";
 import { COL, encode } from "@/lib/firebase/model";
 import { id } from "@/lib/schemas";
-import { getTemplate, hasTemplate } from "@/templates/registry";
+import { hasTemplate } from "@/templates/registry";
 import { bundleFor, publicBundle } from "./bundle";
+import { ensureCurrentTemplateUnlocked } from "./unlocks";
 import { caller, parse, requireAdmin, requireClient, type Caller } from "./guards";
 import { enforceAppCheck } from "./params";
 
 const db = () => getFirestore();
 const randomId = (prefix: string) => `${prefix}_${randomBytes(6).toString("base64url").replace(/[^A-Za-z0-9]/g, "x")}`;
-
-async function pricing(): Promise<PricingSettings> {
-  const d = (await db().doc("settings/pricing").get()).data() as Partial<PricingSettings> | undefined;
-  return { defaultTemplateId: d?.defaultTemplateId ?? "keepsake", overrides: d?.overrides ?? {} };
-}
 
 /** Builds and stores the public snapshot; marks the card published. Returns what changed. */
 async function publish(cardId: string, who: Caller, extra: Record<string, unknown> = {}) {
@@ -36,20 +31,16 @@ async function publish(cardId: string, who: Caller, extra: Record<string, unknow
   if (!bundle) throw new HttpsError("not-found", "That card doesn't exist anymore.");
   const { card } = bundle;
   if (!card.name?.trim()) throw new HttpsError("failed-precondition", "Add a name before publishing.");
-  // Honest locks: a client's card never goes live on a template it hasn't unlocked.
-  if (card.clientId) {
-    const ent = (await db().collection(COL.entitlements).doc(cardId).get()).data() as { unlockedTemplateIds?: string[] } | undefined;
-    if (!canApplyTemplate("client", { cardId, unlockedTemplateIds: ent?.unlockedTemplateIds ?? [] }, await pricing(), card.templateId)) {
-      throw new HttpsError("failed-precondition", `${getTemplate(card.templateId).name} isn't unlocked for this card yet.`);
-    }
-  }
+  // Honest locks: a client's card never goes live on a template it hasn't unlocked. Only the
+  // studio can put a template on a client card, so its current template is unlocked (a comp).
+  const comped = await ensureCurrentTemplateUnlocked(cardId, card);
   const publishedAt = new Date();
   const snapshot = publicBundle(bundle, publishedAt.toISOString());
   const batch = db().batch();
   batch.set(db().collection(COL.publicCards).doc(card.slug), { cardId, slug: card.slug, publishedAt, bundle: encode(snapshot) });
   batch.update(db().collection(COL.cards).doc(cardId), { status: "published", publishedAt, lastEditedBy: who.uid, ...extra });
   await batch.commit();
-  return { publishedAt: publishedAt.toISOString(), slug: card.slug, clientId: card.clientId };
+  return { publishedAt: publishedAt.toISOString(), slug: card.slug, clientId: card.clientId, comped };
 }
 
 async function loadCard(cardId: string) {
@@ -71,7 +62,7 @@ export const publishCard = onCall({ enforceAppCheck }, async (req) => {
     throw new HttpsError("permission-denied", "Your changes need a review before they go live. Use Submit for review.");
   }
   const r = await publish(cardId, who);
-  return { publishedAt: r.publishedAt, slug: r.slug };
+  return { publishedAt: r.publishedAt, slug: r.slug, comped: r.comped };
 });
 
 export const unpublishCard = onCall({ enforceAppCheck }, async (req) => {
@@ -108,7 +99,7 @@ export const reviewDecision = onCall({ enforceAppCheck }, async (req) => {
   if (decision === "approve") {
     const r = await publish(cardId, who, { review: { status: "approved", submittedAt, resolvedAt } });
     if (card.clientId) await notifyClient(card.clientId, cardId, "review_approved", "Your changes are live", `${BRAND.name} reviewed and published your latest edits.`);
-    return { publishedAt: r.publishedAt, slug: r.slug };
+    return { publishedAt: r.publishedAt, slug: r.slug, comped: r.comped };
   }
   if (!note) throw new HttpsError("invalid-argument", "Say what should change, so the client knows what to fix.");
   await db().collection(COL.cards).doc(cardId).update({ review: { status: "changes_requested", submittedAt, resolvedAt, note }, lastEditedBy: who.uid });

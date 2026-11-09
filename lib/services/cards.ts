@@ -33,13 +33,18 @@ export async function refreshPublicPages(slugs: string[]): Promise<void> {
 
 const slugOf = (cardId: string) => readDB().cards.find((c) => c.id === cardId)?.slug;
 
-export async function publishCard(cardId: string): Promise<Result<{ publishedAt: string }>> {
-  if (!isFirebaseMode) return api.publishCard(cardId);
+/** Publishes the draft. `comped`: the card's template, if publishing unlocked it (a client card on a template the studio picked). */
+export async function publishCard(cardId: string): Promise<Result<{ publishedAt: string; comped: string | null }>> {
+  if (!isFirebaseMode) {
+    const comped = portal.ensureTemplateUnlockedLocally(cardId);
+    const r = await api.publishCard(cardId);
+    return r.ok ? { ok: true, data: { publishedAt: r.data.publishedAt, comped } } : r;
+  }
   const { call } = await import("./callable");
-  const r = await call<{ publishedAt: string; slug: string }>("publishCard", { cardId });
+  const r = await call<{ publishedAt: string; slug: string; comped?: string | null }>("publishCard", { cardId });
   if (!r.ok) return r;
   await refreshPublicPages([r.data.slug]);
-  return { ok: true, data: { publishedAt: r.data.publishedAt } };
+  return { ok: true, data: { publishedAt: r.data.publishedAt, comped: r.data.comped ?? null } };
 }
 
 export async function unpublishCard(cardId: string): Promise<Result> {
@@ -60,9 +65,6 @@ export async function submitCardForReview(cardId: string): Promise<Result<{ subm
 /** Approve a client's changes: publishes them and tells the client. */
 export async function approveCardReview(cardId: string): Promise<Result> {
   if (!isFirebaseMode) return portal.approveCardReview(cardId);
-  // A paid template the card hasn't unlocked is unlocked by the admin's approval (a comp).
-  const unlock = await portal.unlockForAdminPublish(cardId);
-  if (!unlock.ok) return unlock;
   const { call } = await import("./callable");
   const r = await call<{ slug: string }>("reviewDecision", { cardId, decision: "approve" });
   if (!r.ok) return r;
