@@ -24,12 +24,11 @@ export const WORKSPACE = {
   /** Mock persona for the demo change log; emails are signed by the company only. */
   adminName: "Rhea Manalastas",
   adminEmail: "admin@tapik.ph",
-  /** Placeholder payment instructions for the "Send payment details" email. Never real accounts. */
-  payment: [
-    { method: "GCash", detail: "0917 000 0000 · TAPIK (placeholder)" },
-    { method: "Maya", detail: "0918 000 0000 · TAPIK (placeholder)" },
-    { method: "Bank transfer", detail: "BPI · Acct. no. 0000-0000-00 · Tapik (placeholder)" },
-  ],
+  /**
+   * How clients pay: the InstaPay QR from Payment settings (settings/payment), which
+   * "Send payment details" embeds in the email. No account numbers are written here.
+   */
+  payment: [{ method: "InstaPay QR", detail: "scan the QR code below with GCash, Maya, GoTyme or any bank app" }],
 };
 
 export const ADMIN_NAME = WORKSPACE.adminName;

@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, BadgeCheck, Check, CircleCheck, Copy, Expand, Gift, Inbox, LoaderCircle, Search, Send, TriangleAlert, X, XCircle } from "lucide-react";
 import { memo, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { OPEN_REQUEST } from "@/lib/entitlements";
-import { getPaymentProof } from "@/lib/services/payments";
+import { getPaymentProof, getPaymentQr } from "@/lib/services/payments";
 import { bundleFromDB } from "@/lib/mock";
 import { formatPeso } from "@/lib/pricing";
 import { useDB } from "@/lib/services/data";
@@ -864,6 +864,16 @@ function PaymentDialog({ open, onOpenChange, r, client, onDone }: { open: boolea
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false);
   const missing = !subject.trim() || !body.trim();
+  // The QR the email embeds (Payment settings), for the preview.
+  const [qr, setQr] = useState<{ url: string | null; missing: boolean }>({ url: null, missing: false });
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    void getPaymentQr().then((q) => live && setQr(q.ok ? { url: q.data.dataUrl, missing: false } : { url: null, missing: true }));
+    return () => {
+      live = false;
+    };
+  }, [open]);
   const name = requestTemplateName(r);
   return (
     <Dialog
@@ -901,7 +911,7 @@ function PaymentDialog({ open, onOpenChange, r, client, onDone }: { open: boolea
           {(p) => <Textarea id={p.id} aria-describedby={p.describedBy} invalid={p.invalid} rows={8} value={body} onChange={(e) => setBody(e.target.value)} />}
         </Field>
         <EmailPreview to={{ name: client.name, email: client.email }} subject={subject}>
-          <PaymentEmailBody templateName={name} amount={r.price} body={body} />
+          <PaymentEmailBody templateName={name} amount={r.price} body={body} qr={qr.url} qrMissing={qr.missing} />
         </EmailPreview>
       </div>
     </Dialog>

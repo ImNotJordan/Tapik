@@ -152,7 +152,11 @@ export function InviteEmailBody({ clientName, message, link, expiresAt }: { clie
 }
 
 /** Payment details for a template request. `body` is the admin's editable text; amounts come from the request. */
-export function PaymentEmailBody({ templateName, amount, body }: { templateName: string; amount: number; body: string }) {
+/**
+ * `qr`: the InstaPay QR the email carries (from Payment settings): an image URL, null while
+ * loading or when none is uploaded (`qrMissing`), or undefined for the style guide.
+ */
+export function PaymentEmailBody({ templateName, amount, body, qr, qrMissing }: { templateName: string; amount: number; body: string; qr?: string | null; qrMissing?: boolean }) {
   return (
     <>
       <EmailLogo />
@@ -161,10 +165,15 @@ export function PaymentEmailBody({ templateName, amount, body }: { templateName:
         <span className="text-[20px] font-semibold tabular-nums">{formatPeso(amount)}</span>
       </div>
       <div className="flex flex-col gap-4 whitespace-pre-line [overflow-wrap:anywhere]">{body}</div>
-      <p className="inline-flex items-center gap-1.5 text-[12.5px] text-[#5f6662]">
-        <Paperclip aria-hidden className="size-3.5" />
-        Placeholder payment details. Real account numbers are added when payments are connected.
-      </p>
+      {qr ? (
+        // eslint-disable-next-line @next/next/no-img-element -- a data: URL preview of the QR the email embeds
+        <img src={qr} alt="InstaPay QR code to pay" className="w-[220px] rounded-xl border border-[#e6e8e5]" />
+      ) : (
+        <p className="inline-flex items-center gap-1.5 text-[12.5px] text-[#5f6662]">
+          <Paperclip aria-hidden className="size-3.5" />
+          {qrMissing ? "No InstaPay QR yet: upload it in Payment settings before sending." : "Your InstaPay QR from Payment settings goes here."}
+        </p>
+      )}
       <Footer>Reply to this email with your reference number{WORKSPACE.phone ? `, or call ${WORKSPACE.phone}` : ""}.</Footer>
     </>
   );

@@ -470,6 +470,9 @@ export const sendTemplatePaymentDetails = onCall({ enforceAppCheck }, async (req
   requireAdmin(req);
   const { requestId, subject, body } = parse(z.object({ requestId: id, subject: z.string().trim().min(1).max(200), body: z.string().trim().min(1).max(5000) }), req.data);
   if (!mailReady()) throw new HttpsError("failed-precondition", "Sending email isn't set up yet.");
+  // The email carries the InstaPay QR from Payment settings (inline, as an attachment; never a public link).
+  const qrPath = (await paymentSettings()).qrStoragePath;
+  if (!qrPath) throw new HttpsError("failed-precondition", "Upload your InstaPay QR in Payment settings first, so the email can include it.");
   const sentAt = nowIso();
   const r = await db().runTransaction(async (tx) => {
     const { ref, r } = await txRequest(tx, requestId);
@@ -485,7 +488,15 @@ export const sendTemplatePaymentDetails = onCall({ enforceAppCheck }, async (req
   });
   const client = (await db().collection(COL.clients).doc(r.clientId).get()).data() as { email?: string } | undefined;
   if (client?.email) {
-    await queueMail(`payment_${requestId}_${Date.parse(sentAt)}`, { to: client.email, subject, text: `${body}\n\n${emailSentOnBehalf(WORKSPACE.company)}`, html: simpleHtml(body.split(/\n{2,}/), undefined, emailSentOnBehalf(WORKSPACE.company)) });
+    const ext = qrPath.endsWith(".png") ? "png" : "jpg";
+    const footer = emailSentOnBehalf(WORKSPACE.company);
+    await queueMail(`payment_${requestId}_${Date.parse(sentAt)}`, {
+      to: client.email,
+      subject,
+      text: `${body}\n\nThe InstaPay QR code is attached to this email.\n\n${footer}`,
+      html: simpleHtml(body.split(/\n{2,}/), undefined, footer, { src: "cid:payment-qr", alt: "InstaPay QR code to pay", width: 280 }),
+      attachments: [{ storagePath: qrPath, filename: `tapik-instapay-qr.${ext}`, contentType: ext === "png" ? "image/png" : "image/jpeg", cid: "payment-qr" }],
+    });
   }
   return { sentAt };
 });

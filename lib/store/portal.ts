@@ -481,8 +481,8 @@ export function paymentEmail(r: TemplateRequest, client: Client) {
     subject: `Payment details for ${name} (${formatPeso(r.price)})`,
     body: [
       `Hi ${greetingName(client.name)},`,
-      `Thanks for choosing the ${name} template for your card. The total is ${formatPeso(r.price)}, one time, and it includes all of its color themes. You can pay any of these ways:`,
-      ...WORKSPACE.payment.map((p) => `${p.method}: ${p.detail}`),
+      `Thanks for choosing the ${name} template for your card. The total is ${formatPeso(r.price)}, one time, and it includes all of its color themes.`,
+      `To pay, scan the InstaPay QR code below with GCash, Maya, GoTyme or any bank app (or save it and upload it in the app’s Scan QR screen), and send exactly ${formatPeso(r.price)}.`,
       `Please reply with a screenshot or the reference number. We'll unlock ${name} as soon as the payment is confirmed, usually the same day.`,
       WORKSPACE.company,
     ].join("\n\n"),

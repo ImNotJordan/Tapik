@@ -16,6 +16,7 @@ import "./setup";
  * and a document is only ever claimed once, so a retried trigger never sends twice.
  */
 import { getFirestore } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
 import { logger } from "firebase-functions";
 import { defineSecret, defineString } from "firebase-functions/params";
 import { onDocumentCreated } from "firebase-functions/v2/firestore";
@@ -28,7 +29,14 @@ const SMTP_PORT = defineString("SMTP_PORT", { default: "465" });
 const SMTP_USER = defineString("SMTP_USER", { default: "" });
 const MAIL_FROM = defineString("MAIL_FROM", { default: "" });
 
-type MailDoc = { to: string; replyTo?: string; message: { subject: string; text: string; html: string }; delivery?: { state: string } };
+type MailDoc = {
+  to: string;
+  replyTo?: string;
+  message: { subject: string; text: string; html: string; attachments?: { storagePath: string; filename: string; contentType: string; cid?: string }[] };
+  delivery?: { state: string };
+};
+/** Card media bucket: attachments (e.g. the payment QR) are read from here, never from a public URL. */
+const MEDIA_BUCKET = "tapik-ph-media";
 
 let transport: Transporter | null = null;
 function smtp(): Transporter {
@@ -59,6 +67,12 @@ export const sendMail = onDocumentCreated({ document: "mail/{id}", secrets: [SMT
   if (!mail) return;
 
   try {
+    const attachments = await Promise.all(
+      (mail.message.attachments ?? []).map(async (a) => {
+        const [content] = await getStorage().bucket(MEDIA_BUCKET).file(a.storagePath).download();
+        return { filename: a.filename, content, contentType: a.contentType, ...(a.cid ? { cid: a.cid } : {}) };
+      }),
+    );
     const info = await smtp().sendMail({
       from: MAIL_FROM.value() || SMTP_USER.value(),
       to: mail.to,
@@ -66,6 +80,7 @@ export const sendMail = onDocumentCreated({ document: "mail/{id}", secrets: [SMT
       subject: mail.message.subject,
       text: mail.message.text,
       html: mail.message.html,
+      ...(attachments.length ? { attachments } : {}),
     });
     await ref.update({ "delivery.state": "SUCCESS", "delivery.endTime": new Date(), "delivery.messageId": info.messageId ?? null });
     logger.info("mail sent", { id: event.params.id });
