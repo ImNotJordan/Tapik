@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 172 56" role="img" aria-label="Tala Life Advisors">
+  <circle cx="28" cy="28" r="26" fill="#0B3D91"/>
+  <path d="M28 10l4.6 11.2L44 28l-11.4 6.8L28 46l-4.6-11.2L12 28l11.4-6.8z" fill="#FCD116"/>
+  <text x="64" y="27" font-family="'Plus Jakarta Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="22" font-weight="800" letter-spacing="-0.4" fill="#0E1B33">Tala Life</text>
+  <text x="64" y="46" font-family="'Plus Jakarta Sans','Segoe UI',Helvetica,Arial,sans-serif" font-size="13" font-weight="600" letter-spacing="1.6" fill="#3A4A66">ADVISORS</text>
+</svg>

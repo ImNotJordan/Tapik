@@ -15,6 +15,7 @@ import { SortableList } from "@/components/ui/sortable-list";
 import { useToast } from "@/components/ui/toast";
 import { useEditor } from "../editor-context";
 import { PanelHeader } from "../fields";
+import { shownBy } from "./details-panel";
 
 const MAX_PHOTOS = 24;
 
@@ -127,8 +128,8 @@ export function PhotosPanel() {
         key={editing?.id ?? "none"}
         photo={editing}
         onClose={() => setEditing(null)}
-        onSave={(caption, alt) => {
-          if (editing) patchPhoto(card.id, editing.id, { caption, alt });
+        onSave={(caption, alt, tag) => {
+          if (editing) patchPhoto(card.id, editing.id, { caption, alt, tag: tag || undefined });
           setEditing(null);
           toast.success("Photo details saved");
         }}
@@ -137,8 +138,9 @@ export function PhotosPanel() {
   );
 }
 
-function PhotoDialog({ photo, onClose, onSave }: { photo: AlbumPhoto | null; onClose: () => void; onSave: (caption: string, alt: string) => void }) {
+function PhotoDialog({ photo, onClose, onSave }: { photo: AlbumPhoto | null; onClose: () => void; onSave: (caption: string, alt: string, tag: string) => void }) {
   const [caption, setCaption] = useState(photo?.caption ?? "");
+  const [tag, setTag] = useState(photo?.tag ?? "");
   const [alt, setAlt] = useState(photo?.alt ?? "");
   return (
     <Dialog
@@ -148,7 +150,7 @@ function PhotoDialog({ photo, onClose, onSave }: { photo: AlbumPhoto | null; onC
       footer={
         <>
           <Button onClick={onClose}>Cancel</Button>
-          <Button variant="primary" onClick={() => onSave(caption.trim(), alt.trim())}>
+          <Button variant="primary" onClick={() => onSave(caption.trim(), alt.trim(), tag.trim())}>
             Save details
           </Button>
         </>
@@ -159,6 +161,9 @@ function PhotoDialog({ photo, onClose, onSave }: { photo: AlbumPhoto | null; onC
           <img src={photo.url} alt="" className="max-h-56 w-full rounded-xl bg-studio-raised object-contain" />
           <Field label="Caption" optional hint="Shown under the photo when it’s opened full screen.">
             {(p) => <Textarea id={p.id} aria-describedby={p.describedBy} rows={2} value={caption} onChange={(e) => setCaption(e.target.value)} />}
+          </Field>
+          <Field label="Tag" optional hint={`A short label on the photo, like “P-024” or “Next.js · Supabase”. Shown by ${shownBy("photoTags")}.`}>
+            {(p) => <Input id={p.id} aria-describedby={p.describedBy} value={tag} maxLength={40} onChange={(e) => setTag(e.target.value)} />}
           </Field>
           <Field label="Description (alt text)" hint="What the photo shows, for people using screen readers.">
             {(p) => <Input id={p.id} aria-describedby={p.describedBy} value={alt} onChange={(e) => setAlt(e.target.value)} placeholder="e.g. Kitchen with wooden shelves" />}

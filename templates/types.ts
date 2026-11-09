@@ -47,6 +47,18 @@ export type TemplateManifest = {
     taglines?: boolean;
     idCard?: boolean;
     event?: boolean;
+    /** Status pill (statusChip). */
+    statusChip?: boolean;
+    /** Filipino version of the card's words (translations), with an English | Filipino switch in the editor. */
+    translations?: boolean;
+    /** Tech stack table (stackRows). */
+    stackRows?: boolean;
+    /** Commit activity graph from a GitHub username (githubUsername). */
+    githubActivity?: boolean;
+    /** Chat hero (promptDemo). */
+    promptDemo?: boolean;
+    /** Album photos show a short tag on their plates (AlbumPhoto.tag). */
+    photoTags?: boolean;
   };
   isNew?: boolean;
 

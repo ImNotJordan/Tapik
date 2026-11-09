@@ -26,4 +26,11 @@ export const TEMPLATE_COMPONENTS: Record<string, ComponentType<TemplateProps>> =
   transit: dynamic(() => import("./transit/Card"), { loading: CardSkeletonFill }),
   bilingual: dynamic(() => import("./bilingual/Card"), { loading: CardSkeletonFill }),
   "hyacinth-executive": dynamic(() => import("./hyacinth-executive/Card"), { loading: CardSkeletonFill }),
+  "dispatch": dynamic(() => import("./dispatch/Card"), { loading: CardSkeletonFill }),
+  "mosaic": dynamic(() => import("./mosaic/Card"), { loading: CardSkeletonFill }),
+  "opening-night": dynamic(() => import("./opening-night/Card"), { loading: CardSkeletonFill }),
+  "dalawang-wika": dynamic(() => import("./dalawang-wika/Card"), { loading: CardSkeletonFill }),
+  "blueprint": dynamic(() => import("./blueprint/Card"), { loading: CardSkeletonFill }),
+  "prompt": dynamic(() => import("./prompt/Card"), { loading: CardSkeletonFill }),
+  "commit": dynamic(() => import("./commit/Card"), { loading: CardSkeletonFill }),
 };

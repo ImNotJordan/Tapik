@@ -7,9 +7,10 @@ import { contrastRatio, formatRatio } from "@/lib/design/contrast";
 import { themeChecks } from "@/lib/design/resolve";
 import { TEMPLATES } from "@/templates/registry";
 import { brandContrastPairs } from "@/templates/hyacinth-executive/brand";
+import { promptContrastPairs } from "@/templates/prompt/roles";
 
 /** Templates with more color roles than the seven tokens list their extra text pairs here. */
-const EXTRA: Record<string, typeof brandContrastPairs> = { "hyacinth-executive": brandContrastPairs };
+const EXTRA: Record<string, typeof brandContrastPairs> = { "hyacinth-executive": brandContrastPairs, prompt: promptContrastPairs };
 
 let failures = 0;
 let total = 0;

@@ -16,6 +16,13 @@ import { manifest as reel } from "./reel/manifest";
 import { manifest as splitHero } from "./split-hero/manifest";
 import { manifest as sunnyCounter } from "./sunny-counter/manifest";
 import { manifest as transit } from "./transit/manifest";
+import { manifest as dispatch } from "./dispatch/manifest";
+import { manifest as mosaic } from "./mosaic/manifest";
+import { manifest as openingNight } from "./opening-night/manifest";
+import { manifest as dalawangWika } from "./dalawang-wika/manifest";
+import { manifest as blueprint } from "./blueprint/manifest";
+import { manifest as prompt } from "./prompt/manifest";
+import { manifest as commit } from "./commit/manifest";
 
 /**
  * Single source of truth for templates. To add one: create /templates/<id>/
@@ -39,6 +46,13 @@ export const TEMPLATES: TemplateManifest[] = [
   transit,
   bilingual,
   hyacinthExecutive,
+  dispatch,
+  mosaic,
+  openingNight,
+  dalawangWika,
+  blueprint,
+  prompt,
+  commit,
 ];
 
 export const DEFAULT_TEMPLATE_ID = keepsake.id;

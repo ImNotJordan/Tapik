@@ -89,7 +89,8 @@ export function AboutBlock({ tone, className, heading }: { tone: Tone; className
           {L.about}
         </SectionHeading>
       )}
-      <div id={`${uid}-text`} className={cn("flex max-w-[56ch] flex-col gap-3 text-base leading-[1.65]", T[tone].muted, long && !open && "line-clamp-5")}>
+      {/* Collapsed: a plain block so line-clamp works (it has no effect on a flex column); paragraphs keep their gap with margins. */}
+      <div id={`${uid}-text`} className={cn("max-w-[56ch] text-base leading-[1.65]", T[tone].muted, long && !open ? "line-clamp-5 [&>p+p]:mt-3" : "flex flex-col gap-3")}>
         {paragraphs.map((p, i) => (
           <p key={i}>{p}</p>
         ))}

@@ -2,8 +2,9 @@
 
 import { CalendarPlus } from "lucide-react";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { generateCalendarFile } from "@/lib/services/card-utils";
-import type { CardEvent, OpeningHours } from "@/lib/types";
+import { MESSAGE_LABEL, generateCalendarFile, messageHref } from "@/lib/services/card-utils";
+import type { CardEvent, OpeningHours, StatusChip } from "@/lib/types";
+import { phoneDigits } from "@/lib/validate";
 import { cn } from "@/lib/utils";
 import { useCard } from "./context";
 import { useLabels, type CardLabels } from "./labels";
@@ -240,4 +241,78 @@ export function useBookingHref(): string | null {
   const c = bundle.card;
   if (c.bookingUrl?.trim()) return c.bookingUrl.trim();
   return null;
+}
+
+/* ------------------------------------------------- Main button (K–Q) */
+
+/**
+ * The template's main call to action. The card's own button (bookingUrl +
+ * bookingLabel + bookingNote, edited as "Main button") when it has a link;
+ * otherwise it falls back to Message, then Call. Null when there's nothing to do.
+ */
+export type PrimaryCta = { kind: "link" | "message" | "call"; href: string; label: string; sub?: string; external: boolean };
+
+export function usePrimaryCta(defaultLabel: string): PrimaryCta | null {
+  const { bundle } = useCard();
+  const L = useLabels();
+  const c = bundle.card;
+  const label = c.bookingLabel?.trim() || defaultLabel;
+  const sub = c.bookingNote?.trim() || undefined;
+  if (c.bookingUrl?.trim()) return { kind: "link", href: c.bookingUrl.trim(), label, sub, external: true };
+  const message = messageHref(c);
+  if (message) return { kind: "message", href: message, label: c.bookingLabel?.trim() || L.messageOn(MESSAGE_LABEL[c.messageChannel]), sub, external: !message.startsWith("sms:") };
+  if (c.phone) return { kind: "call", href: `tel:${phoneDigits(c.phone)}`, label: L.call, sub, external: false };
+  return null;
+}
+
+/* ------------------------------------------------ Status chip (K, Q) */
+
+/** The card's status pill, or the template's default. An empty label hides it. */
+export function useStatusChip(defaultLabel: string): StatusChip | null {
+  const { bundle } = useCard();
+  const s = bundle.card.statusChip;
+  if (!s) return { label: defaultLabel, tone: "live" };
+  return s.label.trim() ? s : null;
+}
+
+/* ------------------------------------------ Event clock with seconds */
+
+export type EventClock =
+  | { state: "upcoming"; days: number; hours: number; minutes: number; seconds: number }
+  | { state: "live" | "after" };
+
+/**
+ * Countdown to event.startsAt to the second. "live" from the start for 24 hours
+ * (or until endsAt), then "after". Ticks once a second while the tab is
+ * visible and pauses when it's hidden. SSR and thumbnails count from a fixed
+ * moment so the markup is stable.
+ */
+export function useEventClock(e: CardEvent | null): EventClock | null {
+  const { mode } = useCard();
+  const mounted = useMounted();
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (mode === "thumbnail" || !e) return;
+    let id: ReturnType<typeof setInterval> | undefined;
+    const start = () => {
+      clearInterval(id);
+      setNow(Date.now());
+      id = setInterval(() => setNow(Date.now()), 1000);
+    };
+    const onVis = () => (document.hidden ? clearInterval(id) : start());
+    start();
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [mode, e]);
+  if (!e) return null;
+  const startAt = new Date(e.startsAt).getTime();
+  const t = mounted && mode !== "thumbnail" ? now : startAt - ((12 * 24 + 5) * 3600 + 42 * 60 + 17) * 1000;
+  const endAt = e.endsAt ? new Date(e.endsAt).getTime() : startAt + 24 * 3600_000;
+  if (t >= endAt) return { state: "after" };
+  if (t >= startAt) return { state: "live" };
+  const s = Math.floor((startAt - t) / 1000);
+  return { state: "upcoming", days: Math.floor(s / 86400), hours: Math.floor((s % 86400) / 3600), minutes: Math.floor((s % 3600) / 60), seconds: s % 60 };
 }

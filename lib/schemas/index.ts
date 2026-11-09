@@ -80,7 +80,12 @@ export const cardContent = z.object({
   eyebrow: text(40).optional(),
   department: text(120).optional(),
   employeeId: text(60).optional(),
-  event: z.object({ title: text(120), startsAt: isoDate, endsAt: isoDate.optional(), venue: text(200).optional(), note: text(500).optional() }).optional(),
+  event: z.object({ title: text(120), startsAt: isoDate, endsAt: isoDate.optional(), venue: text(200).optional(), note: text(500).optional(), eyebrow: text(40).optional(), timeLabel: text(40).optional() }).optional(),
+  statusChip: z.object({ label: text(32), tone: z.enum(["live", "neutral"]) }).optional(),
+  translations: z.object({ fil: z.object({ title: text(120).optional(), quote: text(280).optional(), description: text(2000).optional(), chips: z.array(text(60)).max(30).optional() }).optional() }).optional(),
+  stackRows: z.array(z.object({ label: text(24), value: text(120) })).max(8).optional(),
+  githubUsername: z.string().trim().max(39).regex(/^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?$/, "Use the GitHub username only, like octocat.").optional().or(z.literal("")),
+  promptDemo: z.object({ ask: text(200), replyLines: z.array(text(120)).max(6), resultLabel: text(60).optional() }).optional(),
   sectionOrder: z.array(reorderableSection).max(7),
   hiddenSections: z.array(z.union([reorderableSection, headerElement])).max(11),
 });
@@ -116,7 +121,7 @@ export const socialLink = z.object({
 });
 
 export const albumPhoto = z.object({
-  id, cardId: id, url, caption: text(200).optional(), alt: text(300).optional(),
+  id, cardId: id, url, caption: text(200).optional(), tag: text(40).optional(), alt: text(300).optional(),
   position: z.number().int().min(0), isCover: z.boolean(), created_at: isoDate,
   storagePath: z.string().max(512).optional(), thumbUrl: url.optional(), width: z.number().int().positive().optional(), height: z.number().int().positive().optional(),
 });

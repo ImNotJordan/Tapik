@@ -25,7 +25,8 @@ service cloud.firestore {
         'agentPhotoUrl', 'agentPhotoAlt', 'agentPhotoCrop', 'backgroundPhotoUrl', 'backgroundPhotoAlt',
         'backgroundFocalPoint', 'overlayOpacity', 'logoUrl', 'logoDarkUrl', 'logoAlt',
         'hours', 'services', 'serviceAreas', 'bookingUrl', 'bookingLabel', 'bookingNote', 'expertiseChips',
-        'tagline', 'eyebrow', 'department', 'employeeId', 'event', 'sectionOrder', 'hiddenSections',
+        'tagline', 'eyebrow', 'department', 'employeeId', 'event', 'statusChip', 'translations',
+        'stackRows', 'githubUsername', 'promptDemo', 'sectionOrder', 'hiddenSections',
         'orgChart'];
     }
 

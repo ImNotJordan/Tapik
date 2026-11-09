@@ -60,7 +60,23 @@ export type CardEvent = {
   endsAt?: string;
   venue?: string;
   note?: string;
+  /** Small line above the title, e.g. "GRAND OPENING" (Opening Night). */
+  eyebrow?: string;
+  /** How the time is shown, e.g. "4 PM till late" (Opening Night). */
+  timeLabel?: string;
 };
+
+/** A small status pill, e.g. "On duty now" (Dispatch) or "Open to projects" (Commit). */
+export type StatusChip = { label: string; tone: "live" | "neutral" };
+
+/** The Filipino version of the card's own words (Dalawang Wika). UI labels come from the template. */
+export type CardTranslations = { fil?: { title?: string; quote?: string; description?: string; chips?: string[] } };
+
+/** One row of a tech stack table, e.g. Frontend → "Next.js · React · Tailwind" (Commit). */
+export type StackRow = { label: string; value: string };
+
+/** The chat in Prompt's hero: what the client asked, the builder's reply, and the result line. */
+export type PromptDemo = { ask: string; replyLines: string[]; resultLabel?: string };
 
 export type Card = {
   id: string;
@@ -131,6 +147,16 @@ export type Card = {
   department?: string;
   employeeId?: string;
   event?: CardEvent;
+  /** Status pill (Dispatch, Commit). Each template has its own default label. */
+  statusChip?: StatusChip;
+  /** Filipino version of the title, quote, about and chips (Dalawang Wika). */
+  translations?: CardTranslations;
+  /** Tech stack rows (Commit). */
+  stackRows?: StackRow[];
+  /** GitHub username for the commit activity graph (Commit). No username, no graph: never fake activity. */
+  githubUsername?: string;
+  /** The chat shown in Prompt's hero. Empty: the cover photo shows instead. */
+  promptDemo?: PromptDemo;
 
   sectionOrder: ReorderableSection[];
   hiddenSections: SectionKey[];
@@ -175,6 +201,8 @@ export type AlbumPhoto = {
   cardId: string;
   url: string;
   caption?: string;
+  /** Short label on a project plate, e.g. "P-024" or "Next.js · Supabase" (Mosaic, Blueprint, Prompt, Commit). */
+  tag?: string;
   alt?: string;
   position: number;
   isCover: boolean;

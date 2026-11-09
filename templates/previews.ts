@@ -15,6 +15,13 @@ import { preview as reel } from "./reel/preview";
 import { preview as splitHero } from "./split-hero/preview";
 import { preview as sunnyCounter } from "./sunny-counter/preview";
 import { preview as transit } from "./transit/preview";
+import { preview as dispatch } from "./dispatch/preview";
+import { preview as mosaic } from "./mosaic/preview";
+import { preview as openingNight } from "./opening-night/preview";
+import { preview as dalawangWika } from "./dalawang-wika/preview";
+import { preview as blueprint } from "./blueprint/preview";
+import { preview as prompt } from "./prompt/preview";
+import { preview as commit } from "./commit/preview";
 
 /** Template id → the sample card its thumbnail renders. */
 export const TEMPLATE_PREVIEWS: Record<string, CardBundle> = {
@@ -34,6 +41,13 @@ export const TEMPLATE_PREVIEWS: Record<string, CardBundle> = {
   transit,
   bilingual,
   "hyacinth-executive": hyacinthExecutive,
+  "dispatch": dispatch,
+  "mosaic": mosaic,
+  "opening-night": openingNight,
+  "dalawang-wika": dalawangWika,
+  "blueprint": blueprint,
+  "prompt": prompt,
+  "commit": commit,
 };
 
 export function getPreview(templateId: string): CardBundle {

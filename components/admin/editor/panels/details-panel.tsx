@@ -2,12 +2,12 @@
 
 import { Plus, Trash2, X } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
-import type { CardEvent, OpeningHours } from "@/lib/types";
+import type { CardEvent, OpeningHours, PromptDemo, StackRow, StatusChip } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { getTemplate, TEMPLATES } from "@/templates/registry";
 import type { TemplateManifest } from "@/templates/types";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/controls";
+import { Badge, Segmented } from "@/components/ui/controls";
 import { SortableList } from "@/components/ui/sortable-list";
 import { useEditor } from "../editor-context";
 import { BoundField, Divider, PanelHeader } from "../fields";
@@ -81,12 +81,56 @@ export function DetailsPanel() {
 
       <Block title="Services" support="serviceChips" tpl={tpl} description="Short names, like “Braces” or “Bilao orders”. Faith & Community lists them as ministries.">
         <ListEditor label="Service" values={card.services ?? []} onChange={(v) => patch({ services: v.length ? v : undefined })} placeholder="e.g. Teeth cleaning" />
+        {tpl.supports.translations && (
+          <ListEditor
+            label="Service in Filipino"
+            values={card.translations?.fil?.chips ?? []}
+            onChange={(v) => {
+              const fil = { ...card.translations?.fil, chips: v.length ? v : undefined };
+              patch({ translations: Object.values(fil).some(Boolean) ? { ...card.translations, fil } : undefined });
+            }}
+            placeholder="e.g. Pagpaplano sa pagreretiro"
+          />
+        )}
       </Block>
 
       <Divider />
 
       <Block title="Service areas" support="serviceAreas" tpl={tpl} description="Cities, ports or provinces you cover, in route order.">
         <ListEditor label="Area" values={card.serviceAreas ?? []} onChange={(v) => patch({ serviceAreas: v.length ? v : undefined })} placeholder="e.g. Batangas Port" />
+      </Block>
+
+      <Divider />
+
+      <Block title="Status" support="statusChip" tpl={tpl} description="A small pill near the name, like “On duty now” or “Open to projects”.">
+        <StatusEditor value={card.statusChip} templateId={tpl.id} onChange={(v) => patch({ statusChip: v })} />
+      </Block>
+
+      <Divider />
+
+      <Block title="Tech stack" support="stackRows" tpl={tpl} description="Rows like Frontend → Next.js · React. Up to 8.">
+        <StackEditor rows={card.stackRows ?? []} onChange={(v) => patch({ stackRows: v.length ? v : undefined })} />
+      </Block>
+
+      <Divider />
+
+      <Block title="GitHub activity" support="githubActivity" tpl={tpl} description="A commit activity graph from your public GitHub profile. Without a username the graph stays hidden: it never shows made-up activity.">
+        <BoundField
+          fieldKey="githubUsername"
+          label="GitHub username"
+          optional
+          value={card.githubUsername ?? ""}
+          validate={(v) => (!v.trim() || /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(v.trim()) ? { ok: true, value: v.trim() } : { ok: false, message: "Use the username only, like octocat." })}
+          onCommit={(v) => patch({ githubUsername: v || undefined })}
+          placeholder="octocat"
+          hint="The part after github.com/."
+        />
+      </Block>
+
+      <Divider />
+
+      <Block title="Chat demo" support="promptDemo" tpl={tpl} description="The chat at the top of the card: what a client asked, your reply, and the result. Empty, the cover photo shows instead.">
+        <PromptEditor value={card.promptDemo} onChange={(v) => patch({ promptDemo: v })} />
       </Block>
 
       <Divider />
@@ -224,6 +268,7 @@ function EventEditor({ event, onChange }: { event: CardEvent; onChange: (e: Card
   const inputCls = "h-11 w-full rounded-lg border border-studio-line-strong bg-studio-surface px-3 text-sm tabular-nums focus:border-studio-action focus:outline-none";
   return (
     <div className="flex flex-col gap-4">
+      <BoundField fieldKey="eventEyebrow" label="Line above the name" optional value={event.eyebrow ?? ""} onCommit={(v) => set({ eyebrow: v || undefined })} max={40} placeholder="e.g. Grand opening" />
       <BoundField fieldKey="eventTitle" label="Event name" value={event.title} onCommit={(v) => set({ title: v })} max={60} placeholder="e.g. Paskuhan sa Kapitolyo Christmas Bazaar" hint={!event.title ? "The countdown shows once the event has a name and a start time." : undefined} />
       <div className="grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1.5 text-sm font-semibold">
@@ -238,10 +283,95 @@ function EventEditor({ event, onChange }: { event: CardEvent; onChange: (e: Card
         </label>
       </div>
       {endsBeforeStart && <p className="-mt-2 text-2xs text-studio-danger-ink">The end is before the start. Check the date.</p>}
+      <BoundField fieldKey="eventTimeLabel" label="Time as shown" optional value={event.timeLabel ?? ""} onCommit={(v) => set({ timeLabel: v || undefined })} max={40} placeholder="e.g. 4 PM till late" hint="Left empty, the start time shows." />
       <BoundField fieldKey="eventVenue" label="Venue" optional value={event.venue ?? ""} onCommit={(v) => set({ venue: v || undefined })} max={80} />
       <BoundField fieldKey="eventNote" label="One-line note" optional value={event.note ?? ""} onCommit={(v) => set({ note: v || undefined })} max={90} placeholder="e.g. 60 makers, food stalls and a parol-making corner" />
       <Button variant="danger-ghost" size="sm" icon={<Trash2 aria-hidden className="size-4" />} onClick={() => onChange(undefined)} className="self-start">
         Remove event
+      </Button>
+    </div>
+  );
+}
+
+const STATUS_DEFAULT: Record<string, string> = { dispatch: "On duty now", commit: "Open to projects" };
+
+function StatusEditor({ value, templateId, onChange }: { value?: StatusChip; templateId: string; onChange: (v: StatusChip | undefined) => void }) {
+  const fallback = STATUS_DEFAULT[templateId] ?? "Available";
+  const shown = value ? value.label.trim() !== "" : true;
+  const tone = value?.tone ?? "live";
+  return (
+    <div className="flex flex-col gap-4">
+      <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold">
+        <input type="checkbox" checked={shown} onChange={(e) => onChange(e.target.checked ? undefined : { label: "", tone })} className="size-4 accent-[var(--studio-action)]" />
+        Show a status
+      </label>
+      {shown && (
+        <div className="grid gap-4 sm:grid-cols-[1fr_auto] sm:items-start">
+          <BoundField fieldKey="statusLabel" label="Status" optional value={value?.label ?? ""} onCommit={(v) => onChange(v ? { label: v, tone } : tone === "live" ? undefined : { label: fallback, tone })} max={32} placeholder={fallback} hint="Left empty, the template’s own status shows." />
+          <div className="flex flex-col gap-1.5">
+            <span className="text-sm font-semibold">Dot</span>
+            <Segmented<StatusChip["tone"]>
+              label="Status dot"
+              value={tone}
+              onChange={(t) => onChange({ label: value?.label || fallback, tone: t })}
+              options={[
+                { value: "live", label: "Green" },
+                { value: "neutral", label: "None" },
+              ]}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StackEditor({ rows, onChange }: { rows: StackRow[]; onChange: (v: StackRow[]) => void }) {
+  const inputCls = "h-11 min-w-0 rounded-lg border border-studio-line-strong bg-studio-surface px-3 text-sm focus:border-studio-action focus:outline-none";
+  const set = (i: number, p: Partial<StackRow>) => onChange(rows.map((r, j) => (j === i ? { ...r, ...p } : r)));
+  return (
+    <div className="flex flex-col gap-2.5">
+      {rows.map((r, i) => (
+        <div key={i} className="grid grid-cols-[minmax(0,7rem)_minmax(0,1fr)_auto] items-center gap-2">
+          <input aria-label={`Row ${i + 1} label`} value={r.label} maxLength={24} onChange={(e) => set(i, { label: e.target.value })} placeholder="Frontend" className={inputCls} />
+          <input aria-label={`Row ${i + 1} tools`} value={r.value} maxLength={120} onChange={(e) => set(i, { value: e.target.value })} placeholder="Next.js · React · Tailwind" className={cn(inputCls, "font-mono")} />
+          <Button variant="ghost" size="sm" aria-label={`Remove row ${i + 1}`} icon={<X aria-hidden className="size-4" />} onClick={() => onChange(rows.filter((_, j) => j !== i))} />
+        </div>
+      ))}
+      {rows.length < 8 && (
+        <Button icon={<Plus aria-hidden className="size-4" />} className="self-start" onClick={() => onChange([...rows, { label: "", value: "" }])}>
+          Add a row
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function PromptEditor({ value, onChange }: { value?: PromptDemo; onChange: (v: PromptDemo | undefined) => void }) {
+  if (!value) {
+    return (
+      <Button icon={<Plus aria-hidden className="size-4" />} className="self-start" onClick={() => onChange({ ask: "", replyLines: [] })}>
+        Add a chat demo
+      </Button>
+    );
+  }
+  const set = (p: Partial<PromptDemo>) => onChange({ ...value, ...p });
+  return (
+    <div className="flex flex-col gap-4">
+      <BoundField fieldKey="promptAsk" label="What the client asked" multiline rows={2} max={200} value={value.ask} onCommit={(v) => set({ ask: v })} placeholder="Can you build a booking page for my salon by Friday?" />
+      <BoundField
+        fieldKey="promptReply"
+        label="Your reply"
+        multiline
+        rows={4}
+        value={value.replyLines.join("\n")}
+        onCommit={(v) => set({ replyLines: v.split("\n").map((l) => l.trimEnd()).filter(Boolean).slice(0, 6) })}
+        placeholder={"Scaffolding Next.js + Supabase\nCalendar, deposits, SMS reminders\nTested on your phone"}
+        hint="One line each, up to 6. Shown as code."
+      />
+      <BoundField fieldKey="promptResult" label="Result line" optional max={60} value={value.resultLabel ?? ""} onCommit={(v) => set({ resultLabel: v || undefined })} placeholder="Deployed → salon.example.ph" />
+      <Button variant="danger-ghost" size="sm" icon={<Trash2 aria-hidden className="size-4" />} onClick={() => onChange(undefined)} className="self-start">
+        Remove chat demo
       </Button>
     </div>
   );

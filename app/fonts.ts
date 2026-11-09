@@ -25,6 +25,13 @@ import {
   Onest,
   Public_Sans,
   Work_Sans,
+  Cormorant_Garamond,
+  Unbounded,
+  Outfit,
+  Plus_Jakarta_Sans,
+  Space_Grotesk,
+  Geist_Mono,
+  Fira_Code,
   Albert_Sans,
   Atkinson_Hyperlegible_Next,
   Archivo,
@@ -146,6 +153,14 @@ export const bitter = Bitter({ subsets: ["latin"], display: "swap", preload: fal
 export const montserrat = Montserrat({ subsets: ["latin"], display: "swap", preload: false, weight: ["700", "800"], variable: "--font-montserrat" });
 export const lexend = Lexend({ subsets: ["latin"], display: "swap", preload: false, weight: ["400", "500", "600", "700"], variable: "--font-lexend" });
 export const playfair = Playfair_Display({ subsets: ["latin"], display: "swap", preload: false, style: ["normal", "italic"], weight: ["400", "500"], variable: "--font-playfair" });
+/* Templates K–Q (2026-11). */
+export const cormorant = Cormorant_Garamond({ subsets: ["latin"], display: "swap", preload: false, style: ["normal", "italic"], weight: ["500", "600", "700"], variable: "--font-cormorant" });
+export const unbounded = Unbounded({ subsets: ["latin"], display: "swap", preload: false, weight: ["500", "700", "800"], variable: "--font-unbounded" });
+export const outfit = Outfit({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-outfit" });
+export const plusJakarta = Plus_Jakarta_Sans({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-plus-jakarta" });
+export const spaceGrotesk = Space_Grotesk({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-space-grotesk" });
+export const geistMono = Geist_Mono({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-geist-mono" });
+export const firaCode = Fira_Code({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-fira-code" });
 export const karla = Karla({ subsets: ["latin"], display: "swap", preload: false, variable: "--font-karla" });
 
 export const fontVariables = [
@@ -186,6 +201,13 @@ export const fontVariables = [
   montserrat,
   lexend,
   playfair,
+  cormorant,
+  unbounded,
+  outfit,
+  plusJakarta,
+  spaceGrotesk,
+  geistMono,
+  firaCode,
 ]
   .map((f) => f.variable)
   .join(" ");
